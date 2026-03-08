@@ -67,6 +67,7 @@ local currentPhase   = 1
 local allWorkersDone = false
 local campActive     = false
 local phase2StopHit  = false  -- true once Manual is purchased in phase 2
+local selectorDone   = false  -- true once auto-select has fired
 
 -- ──────────────────────────────────────────────────────────
 --  WAIT FOR LEADERSTATS
@@ -339,16 +340,19 @@ end)
 task.spawn(function()
     task.wait(2)  -- let game load
     local rebirths = getRebirths()
-    print("[AutoExec] Rebirths =", rebirths)
+    print("[AutoExec] Rebirths =", rebirths, "| Username =", username)
     if rebirths >= REBIRTH_TARGET then
-        print("[AutoExec] ≥5 rebirths → selecting Tycoon 2")
+        print("[AutoExec] >=5 rebirths -> selecting Tycoon 2")
         currentPhase = 2
         selectTycoon(2)
     else
-        print("[AutoExec] <5 rebirths → selecting Tycoon 1")
+        print("[AutoExec] <5 rebirths -> selecting Tycoon 1")
         currentPhase = 1
         selectTycoon(1)
     end
+    task.wait(2)  -- give tycoon time to spawn ButtonFolder
+    selectorDone = true
+    print("[AutoExec] Selector done - farm loop may start")
 end)
 
 -- ──────────────────────────────────────────────────────────
@@ -357,15 +361,28 @@ end)
 task.spawn(function()
     while running do
         task.wait(0.5)
+        -- Wait until tycoon selector has finished and ButtonFolder has had time to appear
+        if not selectorDone then
+            setStatus("Waiting for tycoon select...")
+            task.wait(1) continue
+        end
         if not autoFarm or currentPhase ~= 1 then task.wait(1) continue end
-        if campActive then setStatus("⚠️ Clearing camp… (farm paused)") task.wait(0.5) continue end
+        if campActive then setStatus("Camp active - farm paused") task.wait(0.5) continue end
 
         local tycoon = getTycoon()
         if not tycoon then setStatus("⚠ Tycoon not found") task.wait(3) continue end
         local remote = tycoon:FindFirstChild("RemoteFunction")
         local folder = tycoon:FindFirstChild("ButtonFolder")
-        if not remote then setStatus("⚠ RemoteFunction missing") task.wait(3) continue end
-        if not folder  then setStatus("⚠ ButtonFolder missing")  task.wait(3) continue end
+        if not remote then setStatus("RemoteFunction missing") task.wait(3) continue end
+        if not folder  then setStatus("ButtonFolder missing")  task.wait(3) continue end
+
+        -- Buy Start button first if present (initialises tycoon on first run)
+        if folder:FindFirstChild("Start") then
+            print("[Phase1] Found Start button - buying")
+            setStatus("Buying Start button...")
+            fireRemote(remote, "Start")
+            task.wait(BUY_DELAY + 1)
+        end
 
         local rebirths = getRebirths()
         if rebirths >= REBIRTH_TARGET then
