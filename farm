@@ -57,13 +57,24 @@ end
 -- ──────────────────────────────────────────────────────────
 --  HELPERS
 -- ──────────────────────────────────────────────────────────
+local function parseCash(raw)
+    -- Handle formatted strings like "$808K", "$1.2M", "1,500", plain numbers
+    raw = tostring(raw):gsub("%$", ""):gsub(",", ""):match("^%s*(.-)%s*$") -- strip $, commas, spaces
+    local suffixes = { K = 1e3, M = 1e6, B = 1e9, T = 1e12 }
+    local num, suffix = raw:match("^([%d%.]+)([KkMmBbTt]?)$")
+    if num then
+        local n = tonumber(num) or 0
+        local s = suffix and suffix:upper()
+        return math.floor(n * (suffixes[s] or 1))
+    end
+    return math.floor(tonumber(raw) or 0)
+end
+
 local function getMoney()
     if not leaderstats then return 0 end
     local v = leaderstats:FindFirstChild("Cash")
     if not v then return 0 end
-    -- Strip commas in case the value is formatted like "1,500"
-    local raw = tostring(v.Value):gsub(",", "")
-    return math.floor(tonumber(raw) or 0)
+    return parseCash(v.Value)
 end
 
 local function getRebirths()
