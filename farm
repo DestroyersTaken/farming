@@ -63,11 +63,13 @@ local PHASE2_BLACKLIST = { Bunker_Rock1 = true }  -- never buy these
 --  STATE
 -- ──────────────────────────────────────────────────────────
 local running        = true   -- set false by exit button
+local autoFarm       = true   -- toggled by GUI button
 local currentPhase   = 1
 local allWorkersDone = false
 local campActive     = false
 local phase2StopHit  = false  -- true once Manual is purchased in phase 2
 local selectorDone   = false  -- true once auto-select has fired
+local setStatus      = function(s) end  -- forward decl; assigned after GUI builds statusLbl
 
 -- ──────────────────────────────────────────────────────────
 --  WAIT FOR LEADERSTATS
@@ -171,35 +173,25 @@ local function getButtonRebirth(btnFolder)
     return ok and result or nil
 end
 
--- Phase 1 smart buy: checks price, waits for money, then checks rebirth req on failure
+-- Phase 1 smart buy: reads price, farms to it, buys.
+-- Rebirth labels in Phase 1 are unreliable so we always attempt the buy regardless.
 local function smartBuy(remote, folder, btnName)
     local btnObj = folder:FindFirstChild(btnName)
     if not btnObj then return end  -- already gone
 
+    -- Wait until we can afford it (skip wait if no price label)
     local price = getButtonPrice(btnObj)
     if price and price > 0 then
-        if getMoney() < price then
-            setStatus("Saving for " .. btnName .. "… $" .. tostring(getMoney()) .. " / $" .. tostring(price))
-            while running and autoFarm and getMoney() < price do
-                task.wait(2)
-                teleportToCollector()
-            end
+        while running and autoFarm and getMoney() < price do
+            setStatus("Saving for " .. btnName .. ": $" .. tostring(getMoney()) .. " / $" .. tostring(price))
+            task.wait(2)
+            teleportToCollector()
         end
     end
 
-    -- Attempt buy
+    -- Attempt buy — always, even if Rebirth label says otherwise
     fireRemote(remote, btnName)
     task.wait(BUY_DELAY)
-
-    -- If button is still in folder after buying, it failed
-    if folder:FindFirstChild(btnName) then
-        local rebirthReq = getButtonRebirth(btnObj)
-        local currentReb = getRebirths()
-        if rebirthReq and currentReb < rebirthReq then
-            print(string.format("[Skip] %s needs %d rebirths, have %d", btnName, rebirthReq, currentReb))
-            setStatus("Can't buy " .. btnName .. " — need " .. rebirthReq .. " rebirths")
-        end
-    end
 end
 
 local function getAfkPart()
@@ -315,8 +307,8 @@ togBtn.Text = "⏸  Auto Farm: ON"; togBtn.TextColor3 = Color3.fromRGB(255,255,2
 togBtn.TextSize = 13; togBtn.Font = Enum.Font.GothamBold
 Instance.new("UICorner",togBtn).CornerRadius = UDim.new(0,8)
 
-local autoFarm = true
-local function setStatus(s) statusLbl.Text = "Status: "..s end
+-- autoFarm declared at top; assign setStatus now that statusLbl exists
+setStatus = function(s) statusLbl.Text = "Status: "..s end
 
 togBtn.MouseButton1Click:Connect(function()
     autoFarm = not autoFarm
