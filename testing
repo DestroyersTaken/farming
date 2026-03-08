@@ -1,5 +1,94 @@
-local args = {
-    [1] = 2;
-}
+-- ============================================================
+--  Tycoon Selector | Delta Executor
+--  Selects tycoon region + sets base
+--  Run this BEFORE the auto farm script
+-- ============================================================
 
-game:GetService("ReplicatedStorage"):WaitForChild("Packages", 9e9):WaitForChild("_Index", 9e9):WaitForChild("sleitnick_knit@1.5.1", 9e9):WaitForChild("knit", 9e9):WaitForChild("Services", 9e9):WaitForChild("TycoonService", 9e9):WaitForChild("RF", 9e9):WaitForChild("SetBase", 9e9):InvokeServer(unpack(args))USA")
+local RS = game:GetService("ReplicatedStorage")
+
+-- ──────────────────────────────────────────────────────────
+--  SETTINGS — change these
+-- ──────────────────────────────────────────────────────────
+local TYCOON_REGION = "USA"   -- region to select (first tycoon)
+local BASE_NUM      = 2        -- base number for SetBase (second tycoon)
+local DELAY         = 2        -- seconds to wait before firing (let game load)
+
+-- ──────────────────────────────────────────────────────────
+--  HELPERS
+-- ──────────────────────────────────────────────────────────
+local function getKnit()
+    return RS
+        :WaitForChild("Packages",                9e9)
+        :WaitForChild("_Index",                  9e9)
+        :WaitForChild("sleitnick_knit@1.5.1",    9e9)
+        :WaitForChild("knit",                    9e9)
+        :WaitForChild("Services",                9e9)
+end
+
+local function getTycoonService()
+    return getKnit():WaitForChild("TycoonService", 9e9):WaitForChild("RF", 9e9)
+end
+
+local function getABService()
+    return getKnit():WaitForChild("ABTestingService", 9e9):WaitForChild("RF", 9e9)
+end
+
+-- ──────────────────────────────────────────────────────────
+--  STEP 1 — Select tycoon by region
+-- ──────────────────────────────────────────────────────────
+local function selectRegion(region)
+    local ok, err = pcall(function()
+        getTycoonService():WaitForChild("Select", 9e9):InvokeServer(region)
+    end)
+    if ok then
+        print("[Selector] ✓ Region selected:", region)
+    else
+        warn("[Selector] ✗ Select failed:", err)
+    end
+    return ok
+end
+
+-- ──────────────────────────────────────────────────────────
+--  STEP 2 — Set base (second tycoon slot)
+-- ──────────────────────────────────────────────────────────
+local function setBase(baseNum)
+    local ok, err = pcall(function()
+        getTycoonService():WaitForChild("SetBase", 9e9):InvokeServer(baseNum)
+    end)
+    if ok then
+        print("[Selector] ✓ Base set:", baseNum)
+    else
+        warn("[Selector] ✗ SetBase failed:", err)
+    end
+    return ok
+end
+
+-- ──────────────────────────────────────────────────────────
+--  STEP 3 — Get tycoon name (debug / verify)
+-- ──────────────────────────────────────────────────────────
+local function getTycoonName(baseNum)
+    local ok, result = pcall(function()
+        return getABService():WaitForChild("GetGetLocalTycoonName", 9e9):InvokeServer(baseNum)
+    end)
+    if ok then
+        print("[Selector] ✓ Tycoon name:", tostring(result))
+    else
+        warn("[Selector] ✗ GetTycoonName failed:", result)
+    end
+end
+
+-- ──────────────────────────────────────────────────────────
+--  RUN
+-- ──────────────────────────────────────────────────────────
+print("[Selector] Waiting", DELAY, "seconds before selecting…")
+task.wait(DELAY)
+
+selectRegion(TYCOON_REGION)
+task.wait(1)
+
+setBase(BASE_NUM)
+task.wait(1)
+
+getTycoonName(BASE_NUM)
+
+print("[Selector] Done. You can now run the auto farm script.")
