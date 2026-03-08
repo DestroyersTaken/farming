@@ -394,28 +394,51 @@ task.spawn(function()
     while running do
         task.wait(0.5)
         local tycoon = getTycoon()
-        if not tycoon then continue end
+        if not tycoon then campActive = false continue end
         local campsFolder = tycoon:FindFirstChild("Camps")
-        if not campsFolder then continue end
+        if not campsFolder then campActive = false continue end
         local camps = campsFolder:GetChildren()
+
         if #camps == 0 then
             if campActive then
-                campActive = false; campLbl.Text = ""
-                print("[Camp] Cleared — resuming farm")
+                campActive = false
+                campLbl.Text = ""
+                print("[Camp] All camps cleared - resuming farm")
             end
             continue
         end
+
+        -- Camp exists - take full control
         campActive = true
         local camp = camps[1]
+        campLbl.Text = "Camp: " .. camp.Name
+        setStatus("Clearing camp: " .. camp.Name)
+
+        -- Find the button part to stand on
         local campBtn = camp:FindFirstChild("Button")
         if campBtn then
-            campLbl.Text = "⚠️ Camp: "..camp.Name
-            setStatus("⚠️ Clearing camp: "..camp.Name)
-            local part = campBtn:IsA("BasePart") and campBtn or campBtn:FindFirstChildWhichIsA("BasePart",true)
+            local part
+            if campBtn:IsA("BasePart") then
+                part = campBtn
+            else
+                -- Search recursively for any BasePart inside
+                part = campBtn:FindFirstChildWhichIsA("BasePart", true)
+                -- Fallback: search the whole camp model
+                if not part then
+                    part = camp:FindFirstChildWhichIsA("BasePart", true)
+                end
+            end
+
             local hrp = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if hrp and part then hrp.CFrame = part.CFrame + Vector3.new(0,4,0) end
+            if hrp and part then
+                print("[Camp] Teleporting to", camp.Name, "button part:", part.Name)
+                hrp.CFrame = part.CFrame + Vector3.new(0, 5, 0)
+            else
+                warn("[Camp] Could not find HRP or camp part for", camp.Name)
+            end
         else
-            campLbl.Text = "⚠️ Camp: "..camp.Name.." (no button)"
+            warn("[Camp] No 'Button' child found in", camp.Name)
+            campLbl.Text = "Camp: " .. camp.Name .. " (no btn)"
         end
     end
 end)
@@ -523,10 +546,16 @@ task.spawn(function()
             end
         end
 
-        -- STEP 2: Farm to $200k
-        while running and autoFarm and not campActive and getMoney() < MONEY_TO_REBIRTH do
-            task.wait(2); teleportToCollector()
-            setStatus("Farming $200k... $"..tostring(getMoney()).." / $200,000")
+        -- STEP 2: Farm to $200k (pause if camp active - camp watcher handles teleport)
+        while running and autoFarm and getMoney() < MONEY_TO_REBIRTH do
+            if campActive then
+                setStatus("Camp active - pausing farm...")
+                task.wait(0.5)
+            else
+                task.wait(2)
+                teleportToCollector()
+                setStatus("Farming $200k... $"..tostring(getMoney()).." / $200,000")
+            end
         end
 
         -- STEP 3: Attempt rebirth
@@ -537,6 +566,13 @@ task.spawn(function()
         else
             local rebirthDone = false
             while running and autoFarm and not rebirthDone do
+                -- Yield completely for camps
+                if campActive then
+                    setStatus("Camp active - rebirth paused...")
+                    task.wait(0.5)
+                    continue
+                end
+
                 setStatus("Attempting rebirth...")
                 local ok, result = pcall(function() return rebirthRemote:InvokeServer() end)
                 print("[AutoFarm] Rebirth result:", ok, result)
@@ -548,16 +584,21 @@ task.spawn(function()
                 else
                     -- Rebirth failed: buy FREE buttons first, then all others, then wait $200k
                     warn("[AutoFarm] Rebirth false - buying FREE buttons then all others...")
-                    buyFreeButtons(remote, folder)  -- FREE ones first, no wait
+                    if not campActive then buyFreeButtons(remote, folder) end
                     local btns = folder:GetChildren()
                     setStatus("Buying all buttons... ("..#btns.." found)")
                     for _, b in ipairs(btns) do
-                        if not running or not autoFarm then break end
+                        if not running or not autoFarm or campActive then break end
                         fireRemote(remote, b.Name); task.wait(BUY_DELAY)
                     end
+                    -- Farm to $200k, yielding for camps
                     while running and autoFarm and getMoney() < MONEY_TO_REBIRTH do
-                        task.wait(2); teleportToCollector()
-                        setStatus("Farming $200k... $"..tostring(getMoney()).." / $200,000")
+                        if campActive then
+                            task.wait(0.5)
+                        else
+                            task.wait(2); teleportToCollector()
+                            setStatus("Farming $200k... $"..tostring(getMoney()).." / $200,000")
+                        end
                     end
                     print("[AutoFarm] $200k hit - retrying rebirth...")
                 end
