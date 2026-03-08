@@ -276,28 +276,22 @@ task.spawn(function()
             campLbl.Text = "⚠️ Camp: " .. camp.Name .. " (clearing…)"
             setStatus("⚠️ Clearing camp: " .. camp.Name)
 
-            -- Get a CFrame from the button regardless of whether it's a Part or Model
+            -- Get CFrame: BasePart → .CFrame, Model → deep search for any BasePart
             local function getBtnCF(obj)
-                if obj:IsA("BasePart") then
-                    return obj.CFrame
-                elseif obj:IsA("Model") then
-                    return obj:GetPivot()
-                end
-                -- Fallback: find any BasePart inside it
-                local p = obj:FindFirstChildOfClass("Part")
-                    or obj:FindFirstChildOfClass("MeshPart")
-                    or obj:FindFirstChildOfClass("UnionOperation")
-                return p and p.CFrame or nil
+                if obj:IsA("BasePart") then return obj.CFrame end
+                local part = obj:FindFirstChildWhichIsA("BasePart", true)
+                return part and part.CFrame or nil
             end
 
             local cf = getBtnCF(campBtn)
-            print("[Camp]", camp.Name, "button class:", campBtn.ClassName, "| CFrame found:", cf ~= nil)
+            print("[Camp]", camp.Name, "| class:", campBtn.ClassName, "| CFrame:", cf ~= nil)
 
             local hrp = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
             if hrp and cf then
                 hrp.CFrame = cf + Vector3.new(0, 4, 0)
+                print("[Camp] Teleported to", camp.Name)
             elseif not cf then
-                warn("[Camp] Could not get CFrame for button in", camp.Name)
+                warn("[Camp] No BasePart found inside Button of", camp.Name)
             end
         else
             campLbl.Text = "⚠️ Camp: " .. camp.Name .. " (no button?)"
