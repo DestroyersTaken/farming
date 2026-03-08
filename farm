@@ -23,6 +23,7 @@ local TYCOON_REGION    = "USA"
 --  BUTTON LISTS
 -- ──────────────────────────────────────────────────────────
 local PHASE1_PRIORITY = {
+    "Start",  -- must be bought first to initialise the tycoon
     "Worker_1","Worker_2",
     "NewBase_FirstFloor_SGwall3","NewBase_FirstFloor_SGWindow1","NewBase_FirstFloor_SGLaserDoor1",
     "NewBase_FirstFloor_SGWall2","NewBase_FirstFloor_SGWall4","NewBase_FirstFloor_SGWindow2",
