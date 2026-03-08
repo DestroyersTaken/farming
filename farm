@@ -39,6 +39,7 @@ local PRIORITY_BUTTONS = {
 local autoFarm       = true
 local allWorkersDone = false
 local phase1Done     = false
+local campActive     = false  -- true while a camp needs clearing
 
 -- ──────────────────────────────────────────────────────────
 --  WAIT FOR LEADERSTATS
@@ -175,11 +176,14 @@ local statusLbl  = mkLabel(44,  "Status: Starting…",        Color3.fromRGB(175
 local moneyLbl   = mkLabel(66,  "Money: $0",                 Color3.fromRGB(255, 218, 85))
 local rebirthLbl = mkLabel(88,  "Rebirths: 0 / 5",           Color3.fromRGB(110, 220, 135))
 local workerLbl  = mkLabel(110, "Workers: pending…",          Color3.fromRGB(175, 170, 210))
+local campLbl    = mkLabel(130, "",                           Color3.fromRGB(255, 100, 80))
+-- expand frame to fit new label
+frame.Size = UDim2.new(0, 275, 0, 235)
 
 -- Toggle button
 local togBtn = Instance.new("TextButton", frame)
 togBtn.Size             = UDim2.new(1, -20, 0, 36)
-togBtn.Position         = UDim2.new(0, 10, 0, 138)
+togBtn.Position         = UDim2.new(0, 10, 0, 158)
 togBtn.BackgroundColor3 = Color3.fromRGB(75, 52, 180)
 togBtn.BorderSizePixel  = 0
 togBtn.Text             = "⏸  Auto Farm: ON"
@@ -188,7 +192,7 @@ togBtn.TextSize         = 13
 togBtn.Font             = Enum.Font.GothamBold
 Instance.new("UICorner", togBtn).CornerRadius = UDim.new(0, 8)
 
-local phaseLbl = mkLabel(184, "Phase 1: Farm 5 Rebirths", Color3.fromRGB(150, 130, 255))
+local phaseLbl = mkLabel(204, "Phase 1: Farm 5 Rebirths", Color3.fromRGB(150, 130, 255))
 
 local function setStatus(s) statusLbl.Text = "Status: " .. s end
 
@@ -241,12 +245,56 @@ task.spawn(function()
 end)
 
 -- ──────────────────────────────────────────────────────────
+--  CAMP WATCHER LOOP (pauses farm, clears camps)
+-- ──────────────────────────────────────────────────────────
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        local tycoon = getTycoon()
+        if not tycoon then continue end
+
+        local campsFolder = tycoon:FindFirstChild("Camps")
+        if not campsFolder then continue end
+
+        local camps = campsFolder:GetChildren()
+        if #camps == 0 then
+            -- No camps active
+            if campActive then
+                campActive = false
+                campLbl.Text = ""
+                print("[Camp] All camps cleared — resuming farm")
+            end
+            continue
+        end
+
+        -- A camp exists — pause farm and clear it
+        campActive = true
+        local camp = camps[1]  -- handle the first active camp
+        local campBtn = camp:FindFirstChild("Button")
+
+        if campBtn then
+            campLbl.Text = "⚠️ Camp: " .. camp.Name .. " (clearing…)"
+            print("[Camp] Found camp:", camp.Name, "— teleporting to button")
+            setStatus("⚠️ Clearing camp: " .. camp.Name)
+
+            local hrp = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = campBtn.CFrame + Vector3.new(0, 4, 0)
+            end
+        else
+            campLbl.Text = "⚠️ Camp: " .. camp.Name .. " (no button?)"
+            warn("[Camp] Camp", camp.Name, "has no Button child")
+        end
+    end
+end)
+
+-- ──────────────────────────────────────────────────────────
 --  COLLECT LOOP  (every COLLECT_INTERVAL seconds)
 -- ──────────────────────────────────────────────────────────
 task.spawn(function()
     while true do
         task.wait(COLLECT_INTERVAL)
-        if autoFarm then
+        if autoFarm and not campActive then
             teleportToCollector()
         end
     end
@@ -262,6 +310,13 @@ task.spawn(function()
         if not autoFarm then
             setStatus("Paused")
             task.wait(1)
+            continue
+        end
+
+        -- Camp takes full priority — pause everything until cleared
+        if campActive then
+            setStatus("⚠️ Clearing camp… (farm paused)")
+            task.wait(0.5)
             continue
         end
 
