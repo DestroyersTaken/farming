@@ -481,28 +481,44 @@ task.spawn(function()
             continue
         end
 
-        -- STEP 1: Buy priority buttons then workers (normal flow)
-        local hasPriority = false
-        for _, name in ipairs(PHASE1_PRIORITY) do
-            if folder:FindFirstChild(name) then hasPriority = true break end
-        end
+        -- STEP 1: Buy priority/workers — rescan after each pass so newly unlocked buttons are caught
+        local emptyPasses = 0
+        while running and autoFarm and not campActive and emptyPasses < EMPTY_PASSES do
+            if getMoney() >= MONEY_TO_REBIRTH then break end
 
-        if hasPriority then
-            setStatus("Buying priority buttons...")
+            local hasPriority = false
             for _, name in ipairs(PHASE1_PRIORITY) do
-                if not running or not autoFarm or campActive then break end
-                if getMoney() >= MONEY_TO_REBIRTH then break end
-                if folder:FindFirstChild(name) then
-                    smartBuy(remote, folder, name)
-                end
+                if folder:FindFirstChild(name) then hasPriority = true break end
             end
-        else
-            setStatus("Buying workers...")
+            local hasWorker = false
             for _, b in ipairs(folder:GetChildren()) do
-                if not running or not autoFarm or campActive then break end
-                if getMoney() >= MONEY_TO_REBIRTH then break end
-                if b.Name:lower():find("worker") then
-                    smartBuy(remote, folder, b.Name)
+                if b.Name:lower():find("worker") then hasWorker = true break end
+            end
+
+            if not hasPriority and not hasWorker then
+                emptyPasses = emptyPasses + 1
+                setStatus("No buttons found, waiting... ("..emptyPasses.."/"..EMPTY_PASSES..")")
+                task.wait(2)
+            else
+                emptyPasses = 0  -- reset — something appeared
+                if hasPriority then
+                    setStatus("Buying priority buttons...")
+                    for _, name in ipairs(PHASE1_PRIORITY) do
+                        if not running or not autoFarm or campActive then break end
+                        if getMoney() >= MONEY_TO_REBIRTH then break end
+                        if folder:FindFirstChild(name) then
+                            smartBuy(remote, folder, name)
+                        end
+                    end
+                else
+                    setStatus("Buying workers...")
+                    for _, b in ipairs(folder:GetChildren()) do
+                        if not running or not autoFarm or campActive then break end
+                        if getMoney() >= MONEY_TO_REBIRTH then break end
+                        if b.Name:lower():find("worker") then
+                            smartBuy(remote, folder, b.Name)
+                        end
+                    end
                 end
             end
         end
