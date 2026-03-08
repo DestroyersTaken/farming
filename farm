@@ -141,6 +141,67 @@ local function fireRemote(remote, btnName)
     if not ok then warn("[Buy] Error: " .. tostring(err)) end
 end
 
+-- Get cash price from button BillboardGui (Phase 1 only)
+local function getButtonPrice(btnFolder)
+    local ok, result = pcall(function()
+        local b   = btnFolder:FindFirstChild("Button")
+        local gui = b and b:FindFirstChild("BillboardGui")
+        local frm = gui and gui:FindFirstChild("Frame")
+        local lbl = frm and frm:FindFirstChild("Price")
+        if lbl then return parseCash(lbl.ContentText) end
+        return nil
+    end)
+    return ok and result or nil
+end
+
+-- Get rebirth requirement from button BillboardGui (Phase 1 only)
+-- Handles: "1 REBIRTH", "Rebirth 5", "2 REBIRTH", etc.
+local function getButtonRebirth(btnFolder)
+    local ok, result = pcall(function()
+        local b   = btnFolder:FindFirstChild("Button")
+        local gui = b and b:FindFirstChild("BillboardGui")
+        local frm = gui and gui:FindFirstChild("Frame")
+        local lbl = frm and frm:FindFirstChild("Rebirth")
+        if lbl then
+            local n = lbl.ContentText:match("%d+")
+            return n and tonumber(n) or nil
+        end
+        return nil
+    end)
+    return ok and result or nil
+end
+
+-- Phase 1 smart buy: checks price, waits for money, then checks rebirth req on failure
+local function smartBuy(remote, folder, btnName)
+    local btnObj = folder:FindFirstChild(btnName)
+    if not btnObj then return end  -- already gone
+
+    local price = getButtonPrice(btnObj)
+    if price and price > 0 then
+        if getMoney() < price then
+            setStatus("Saving for " .. btnName .. "… $" .. tostring(getMoney()) .. " / $" .. tostring(price))
+            while running and autoFarm and getMoney() < price do
+                task.wait(2)
+                teleportToCollector()
+            end
+        end
+    end
+
+    -- Attempt buy
+    fireRemote(remote, btnName)
+    task.wait(BUY_DELAY)
+
+    -- If button is still in folder after buying, it failed
+    if folder:FindFirstChild(btnName) then
+        local rebirthReq = getButtonRebirth(btnObj)
+        local currentReb = getRebirths()
+        if rebirthReq and currentReb < rebirthReq then
+            print(string.format("[Skip] %s needs %d rebirths, have %d", btnName, rebirthReq, currentReb))
+            setStatus("Can't buy " .. btnName .. " — need " .. rebirthReq .. " rebirths")
+        end
+    end
+end
+
 local function getAfkPart()
     local tycoon = getTycoon()
     if not tycoon then return nil end
@@ -409,24 +470,24 @@ task.spawn(function()
 
             if not hasPriority and not hasWorker then
                 emptyCount = emptyCount + 1
-                setStatus("Waiting for unlocks… ("..emptyCount.."/"..EMPTY_PASSES..")")
+                setStatus("Waiting for unlocks... ("..emptyCount.."/"..EMPTY_PASSES..")")
                 task.wait(1.5)
             else
                 emptyCount = 0
                 if hasPriority then
-                    setStatus("Buying priority buttons…")
+                    setStatus("Buying priority buttons...")
                     for _, name in ipairs(PHASE1_PRIORITY) do
                         if not running or not autoFarm or campActive then break end
                         if folder:FindFirstChild(name) then
-                            fireRemote(remote, name); task.wait(BUY_DELAY)
+                            smartBuy(remote, folder, name)
                         end
                     end
                 else
-                    setStatus("Buying workers…")
+                    setStatus("Buying workers...")
                     for _, b in ipairs(folder:GetChildren()) do
                         if not running or not autoFarm or campActive then break end
                         if b.Name:lower():find("worker") then
-                            fireRemote(remote, b.Name); task.wait(BUY_DELAY)
+                            smartBuy(remote, folder, b.Name)
                         end
                     end
                 end
