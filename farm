@@ -272,49 +272,61 @@ task.spawn(function()
         end
 
         -- ── BUY LOOP ──────────────────────────────────────────
-        -- Keep scanning until the folder stays empty for EMPTY_PASSES checks.
-        -- New buttons can appear after purchasing others, so we re-scan every time.
+        -- Only buy PRIORITY buttons and WORKER buttons.
+        -- Priority always goes first. Workers only when no priority buttons remain.
+        -- Loop keeps re-scanning because buying one button unlocks the next.
+        -- Exit when neither a priority nor a worker button is found for EMPTY_PASSES attempts.
         local emptyCount = 0
         while autoFarm and emptyCount < EMPTY_PASSES do
-            local btns = folder:GetChildren()
 
-            if #btns == 0 then
-                -- Folder is empty — wait and check again for newly spawned buttons
+            -- Check what's available right now
+            local hasPriority = false
+            for _, name in ipairs(PRIORITY_BUTTONS) do
+                if folder:FindFirstChild(name) then
+                    hasPriority = true
+                    break
+                end
+            end
+
+            local hasWorker = false
+            for _, b in ipairs(folder:GetChildren()) do
+                if b.Name:lower():find("worker") then
+                    hasWorker = true
+                    break
+                end
+            end
+
+            if not hasPriority and not hasWorker then
+                -- Nothing we care about — wait for new buttons to unlock
                 emptyCount = emptyCount + 1
-                setStatus("Waiting for new buttons… (" .. emptyCount .. "/" .. EMPTY_PASSES .. ")")
+                setStatus("Waiting for unlocks… (" .. emptyCount .. "/" .. EMPTY_PASSES .. ")")
                 task.wait(1.5)
             else
-                emptyCount = 0  -- reset streak since there are still buttons
+                emptyCount = 0  -- something found, reset streak
 
-                -- Step 1: buy priority buttons in order (if present)
-                setStatus("Buying priority buttons… (" .. #btns .. " in folder)")
-                for _, name in ipairs(PRIORITY_BUTTONS) do
-                    if not autoFarm then break end
-                    if folder:FindFirstChild(name) then
-                        fireRemote(remote, name)
-                        task.wait(BUY_DELAY)
+                if hasPriority then
+                    -- Buy priority buttons in order
+                    setStatus("Buying priority buttons…")
+                    for _, name in ipairs(PRIORITY_BUTTONS) do
+                        if not autoFarm then break end
+                        if folder:FindFirstChild(name) then
+                            fireRemote(remote, name)
+                            task.wait(BUY_DELAY)
+                        end
+                    end
+                else
+                    -- No priority buttons left — buy workers
+                    setStatus("Buying workers…")
+                    for _, b in ipairs(folder:GetChildren()) do
+                        if not autoFarm then break end
+                        if b.Name:lower():find("worker") then
+                            fireRemote(remote, b.Name)
+                            task.wait(BUY_DELAY)
+                        end
                     end
                 end
 
-                -- Step 2: buy any Worker_X buttons that appeared
-                setStatus("Buying workers…")
-                for _, b in ipairs(folder:GetChildren()) do
-                    if not autoFarm then break end
-                    if b.Name:lower():find("worker") then
-                        fireRemote(remote, b.Name)
-                        task.wait(BUY_DELAY)
-                    end
-                end
-
-                -- Step 3: buy everything else remaining
-                setStatus("Buying remaining buttons…")
-                for _, b in ipairs(folder:GetChildren()) do
-                    if not autoFarm then break end
-                    fireRemote(remote, b.Name)
-                    task.wait(BUY_DELAY)
-                end
-
-                -- Small pause so server can spawn newly unlocked buttons
+                -- Pause so server can spawn newly unlocked buttons
                 task.wait(1)
             end
         end
