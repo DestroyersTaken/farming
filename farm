@@ -456,6 +456,12 @@ task.spawn(function()
             continue
         end
 
+        -- Early rebirth check: if already at $200k+ skip buying and go straight to rebirth
+        if getMoney() >= MONEY_TO_REBIRTH then
+            -- jump to rebirth section below by skipping the buy loop
+            goto rebirthCheck
+        end
+
         -- Buy loop: priority first, workers if no priority, re-scan each pass
         local emptyCount = 0
         while running and autoFarm and not campActive and emptyCount < EMPTY_PASSES do
@@ -506,6 +512,7 @@ task.spawn(function()
 
         -- Rebirth check — trigger at $200k regardless of worker status
         -- (workers that need rebirths to unlock will remain in folder, that's fine)
+        ::rebirthCheck::
         local money = getMoney()
         print(string.format("[Rebirth Check] money=%d | need=%d", money, MONEY_TO_REBIRTH))
 
