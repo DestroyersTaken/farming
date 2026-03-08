@@ -504,11 +504,12 @@ task.spawn(function()
         workerLbl.Text = allWorkersDone and "Workers: ✓ All bought" or "Workers: buying…"
         workerLbl.TextColor3 = allWorkersDone and Color3.fromRGB(85,222,85) or Color3.fromRGB(255,198,65)
 
-        -- Rebirth check
+        -- Rebirth check — trigger at $200k regardless of worker status
+        -- (workers that need rebirths to unlock will remain in folder, that's fine)
         local money = getMoney()
-        print(string.format("[Rebirth Check] money=%d | workers=%s | need=%d", money, tostring(allWorkersDone), MONEY_TO_REBIRTH))
+        print(string.format("[Rebirth Check] money=%d | need=%d", money, MONEY_TO_REBIRTH))
 
-        if allWorkersDone and money >= MONEY_TO_REBIRTH then
+        if money >= MONEY_TO_REBIRTH then
             local rebirthRemote = tycoon:WaitForChild("Rebirth", 10)
             if not rebirthRemote then
                 warn("[AutoFarm] Rebirth remote not found!")
@@ -539,10 +540,8 @@ task.spawn(function()
                 end
             end
             task.wait(2)
-        elseif allWorkersDone then
-            setStatus("Farming $200k… $"..tostring(money).." / $200,000")
         else
-            setStatus("Unlocking workers…")
+            setStatus("Farming $200k… $"..tostring(money).." / $200,000")
         end
     end
 end)
