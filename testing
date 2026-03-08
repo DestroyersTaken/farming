@@ -1,0 +1,5 @@
+local args = {
+    [1] = 1
+}
+
+game:GetService("ReplicatedStorage").Packages._Index:FindFirstChild("sleitnick_knit@1.5.1").knit.Services.ABTestingService.RF.GetGetLocalTycoonName:InvokeServer(unpack(args))
