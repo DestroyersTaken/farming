@@ -80,7 +80,7 @@ end
 local function getMoney()
     if leaderstats then
         local cash = leaderstats:FindFirstChild("Cash")
-        if cash then return cash.Value end
+        if cash then return tonumber(cash.Value) or 0 end
     end
     return 0
 end
@@ -88,7 +88,7 @@ end
 local function getRebirths()
     if leaderstats then
         local rb = leaderstats:FindFirstChild("Rebirths")
-        if rb then return rb.Value end
+        if rb then return tonumber(rb.Value) or 0 end
     end
     return 0
 end
@@ -307,42 +307,55 @@ task.spawn(function()
             continue
         end
 
-        -- ── 1. Priority buttons (in order) ──
-        setStatus("Buying priority buttons…")
-        for _, name in ipairs(PRIORITY_BUTTONS) do
-            if not autoFarm then break end
-            if folder:FindFirstChild(name) then
-                buyBtn(remote, name)
-                task.wait(BUY_DELAY)
-            end
-        end
+        -- ── BUYING: loop until a full pass buys nothing new ──
+        -- Each purchase can unlock new buttons, so we keep rescanning.
+        local passedWithNoBuy
+        repeat
+            passedWithNoBuy = true
 
-        -- ── 2. Any remaining Worker buttons ──
-        setStatus("Buying extra workers…")
-        for _, b in ipairs(folder:GetChildren()) do
-            if not autoFarm then break end
-            if b.Name:lower():find("worker") then
+            -- Priority list first (in order)
+            setStatus("Buying priority buttons…")
+            for _, name in ipairs(PRIORITY_BUTTONS) do
+                if not autoFarm then break end
+                if folder:FindFirstChild(name) then
+                    buyBtn(remote, name)
+                    task.wait(BUY_DELAY)
+                    passedWithNoBuy = false
+                end
+            end
+
+            -- Any worker buttons that appeared
+            setStatus("Buying workers…")
+            for _, b in ipairs(folder:GetChildren()) do
+                if not autoFarm then break end
+                if b.Name:lower():find("worker") then
+                    buyBtn(remote, b.Name)
+                    task.wait(BUY_DELAY)
+                    passedWithNoBuy = false
+                end
+            end
+
+            -- Everything else
+            setStatus("Buying remaining buttons…")
+            for _, b in ipairs(folder:GetChildren()) do
+                if not autoFarm then break end
                 buyBtn(remote, b.Name)
                 task.wait(BUY_DELAY)
+                passedWithNoBuy = false
             end
-        end
 
-        -- ── 3. Worker status ──
+            -- Short pause to let server spawn newly unlocked buttons
+            task.wait(1)
+        until passedWithNoBuy or not autoFarm
+
+        -- Worker status after all passes
         allWorkersDone = not hasWorkerButtons(folder)
         if allWorkersDone then
-            workerLbl.Text      = "Workers: ✓ All bought"
+            workerLbl.Text       = "Workers: ✓ All bought"
             workerLbl.TextColor3 = Color3.fromRGB(90,230,90)
         else
-            workerLbl.Text      = "Workers: buying…"
+            workerLbl.Text       = "Workers: buying…"
             workerLbl.TextColor3 = Color3.fromRGB(255,200,70)
-        end
-
-        -- ── 4. Buy everything else ──
-        setStatus("Buying remaining buttons…")
-        for _, b in ipairs(folder:GetChildren()) do
-            if not autoFarm then break end
-            buyBtn(remote, b.Name)
-            task.wait(BUY_DELAY)
         end
 
         -- ── 5. Rebirth check ──
