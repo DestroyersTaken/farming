@@ -1,0 +1,357 @@
+-- ============================================================
+--  Tycoon Auto Farm | Delta Executor
+--  Phase 1: Buy workers → farm 200k → rebirth x5
+-- ============================================================
+
+local Players       = game:GetService("Players")
+local TweenService  = game:GetService("TweenService")
+local localPlayer   = Players.LocalPlayer
+local username      = localPlayer.Name
+
+-- Wait for leaderstats to exist before anything else runs
+local leaderstats = localPlayer:WaitForChild("leaderstats", 15)
+if not leaderstats then
+    warn("[AutoFarm] leaderstats not found after 15s — cash/rebirth will show 0")
+else
+    print("[AutoFarm] leaderstats found. Cash=", leaderstats:FindFirstChild("Cash") and leaderstats.Cash.Value, "Rebirths=", leaderstats:FindFirstChild("Rebirths") and leaderstats.Rebirths.Value)
+end
+
+-- ──────────────────────────────────────
+--  SETTINGS
+-- ──────────────────────────────────────
+local BUY_DELAY        = 0.4    -- seconds between each button buy
+local COLLECT_INTERVAL = 2      -- seconds between teleport-to-collector
+local REBIRTH_TARGET   = 5      -- phase 1 goal
+local MONEY_TO_REBIRTH = 200000 -- 200 000
+
+-- Ordered priority list: must buy these first, in order, before "any worker"
+local PRIORITY_BUTTONS = {
+    "Worker_1",
+    "Worker_2",
+    "NewBase_FirstFloor_SGwall3",
+    "NewBase_FirstFloor_SGWindow1",
+    "NewBase_FirstFloor_SGLaserDoor1",
+    "NewBase_FirstFloor_SGWall2",
+    "NewBase_FirstFloor_SGWall4",
+    "NewBase_FirstFloor_SGWindow2",
+    "NewBase_FirstFloor_SGWall1",
+    "NewBase_FirstFloor_SGLaserDoor2",
+    "NewBase_FirstFloor_Wall1",
+    "NewBase_FirstFloor_Wall5",
+    "NewBase_FirstFloor_Wall4",
+    "NewBase_FirstFloor_Wall8",
+    "NewBase_FirstFloor_Wall3",
+    "NewBase_FirstFloor_Wall7",
+    "NewBase_FirstFloor_Wall2",
+    "NewBase_FirstFloor_Wall6",
+    "NewBase_FirstFloor_Windows",
+    "NewBase_FirstFloor_Path1",
+    "NewBase_FirstFloor_Door2",
+    "NewBase_FirstFloor_Door1",
+    "NewBase_FirstFloor_LaserDoor2",
+    "NewBase_FirstFloor_LaserDoor1",
+    "NewBase_FirstFloor_RoofBeams",
+    "NewBase_FirstFloor_Roof",
+    "MapTable",
+    "NewBase_FirstFloor_RoofLights",
+    "NewBase_FirstFloor_SGSigns",
+    "Weapon1",
+    "Melee1",
+    "Spinner",
+    -- after spinner: any remaining "Worker_X" buttons
+}
+
+-- ──────────────────────────────────────
+--  STATE
+-- ──────────────────────────────────────
+local autoFarm        = true
+local allWorkersDone  = false
+local phase1Complete  = false
+
+-- ──────────────────────────────────────
+--  HELPERS
+-- ──────────────────────────────────────
+local function getTycoon()
+    local pt = workspace:FindFirstChild("PlayerTycoons")
+    if not pt then return nil end
+    return pt:FindFirstChild(username)
+end
+
+local function getMoney()
+    if leaderstats then
+        local cash = leaderstats:FindFirstChild("Cash")
+        if cash then return cash.Value end
+    end
+    return 0
+end
+
+local function getRebirths()
+    if leaderstats then
+        local rb = leaderstats:FindFirstChild("Rebirths")
+        if rb then return rb.Value end
+    end
+    return 0
+end
+
+local function teleportToCollector()
+    local tycoon = getTycoon()
+    if not tycoon then print("[Collect] tycoon not found") return end
+    local models = tycoon:FindFirstChild("Models")
+    if not models then print("[Collect] Models folder not found") return end
+    local starterGiver = models:FindFirstChild("StarterGiver")
+    if not starterGiver then print("[Collect] StarterGiver not found") return end
+    local collectBtn = starterGiver:FindFirstChild("CollectButton")
+    if not collectBtn then print("[Collect] CollectButton not found") return end
+    local hrp = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    hrp.CFrame = collectBtn.CFrame + Vector3.new(0, 5, 0)
+end
+
+local function buyBtn(remote, name)
+    pcall(function()
+        remote:InvokeServer("BuyButton", name)
+    end)
+end
+
+local function hasWorkerButtons(folder)
+    for _, b in ipairs(folder:GetChildren()) do
+        if b.Name:lower():find("worker") then return true end
+    end
+    return false
+end
+
+-- ──────────────────────────────────────
+--  GUI
+-- ──────────────────────────────────────
+if localPlayer.PlayerGui:FindFirstChild("TycoonFarmGUI") then
+    localPlayer.PlayerGui.TycoonFarmGUI:Destroy()
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name             = "TycoonFarmGUI"
+screenGui.ResetOnSpawn     = false
+screenGui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
+screenGui.Parent           = localPlayer.PlayerGui
+
+-- Main Frame
+local frame = Instance.new("Frame")
+frame.Name              = "Main"
+frame.Size              = UDim2.new(0, 270, 0, 210)
+frame.Position          = UDim2.new(0, 16, 0.4, 0)
+frame.BackgroundColor3  = Color3.fromRGB(14, 12, 28)
+frame.BorderSizePixel   = 0
+frame.Active            = true
+frame.Draggable         = true
+frame.Parent            = screenGui
+
+local fc = Instance.new("UICorner"); fc.CornerRadius = UDim.new(0,12); fc.Parent = frame
+local fs = Instance.new("UIStroke"); fs.Color = Color3.fromRGB(110,70,220); fs.Thickness = 1.5; fs.Parent = frame
+
+-- Title bar
+local tBar = Instance.new("Frame")
+tBar.Size            = UDim2.new(1, 0, 0, 38)
+tBar.BackgroundColor3 = Color3.fromRGB(28, 18, 58)
+tBar.BorderSizePixel = 0
+tBar.Parent          = frame
+local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0,12); tc.Parent = tBar
+-- patch bottom of title bar
+local tp = Instance.new("Frame"); tp.Size = UDim2.new(1,0,.5,0); tp.Position = UDim2.new(0,0,.5,0)
+tp.BackgroundColor3 = Color3.fromRGB(28,18,58); tp.BorderSizePixel=0; tp.Parent=tBar
+
+local titleLbl = Instance.new("TextLabel")
+titleLbl.Size               = UDim2.new(1,-12,1,0)
+titleLbl.Position           = UDim2.new(0,12,0,0)
+titleLbl.BackgroundTransparency = 1
+titleLbl.Text               = "🏆  Tycoon Auto Farm"
+titleLbl.TextColor3         = Color3.fromRGB(210,185,255)
+titleLbl.TextSize           = 15
+titleLbl.Font               = Enum.Font.GothamBold
+titleLbl.TextXAlignment     = Enum.TextXAlignment.Left
+titleLbl.Parent             = tBar
+
+-- helper to make labels
+local function makeLabel(yPos, defaultText, color)
+    local l = Instance.new("TextLabel")
+    l.Size               = UDim2.new(1,-20,0,20)
+    l.Position           = UDim2.new(0,10,0,yPos)
+    l.BackgroundTransparency = 1
+    l.Text               = defaultText
+    l.TextColor3         = color or Color3.fromRGB(180,175,210)
+    l.TextSize           = 12
+    l.Font               = Enum.Font.Gotham
+    l.TextXAlignment     = Enum.TextXAlignment.Left
+    l.Parent             = frame
+    return l
+end
+
+local statusLbl  = makeLabel(44,  "Status: Starting…",      Color3.fromRGB(180,175,210))
+local moneyLbl   = makeLabel(66,  "Money: $0",               Color3.fromRGB(255,220,90))
+local rebirthLbl = makeLabel(88,  "Rebirths: 0 / 5",         Color3.fromRGB(120,220,140))
+local workerLbl  = makeLabel(110, "Workers: pending…",        Color3.fromRGB(180,175,210))
+
+-- Toggle button
+local togBtn = Instance.new("TextButton")
+togBtn.Size             = UDim2.new(1,-20,0,36)
+togBtn.Position         = UDim2.new(0,10,0,138)
+togBtn.BackgroundColor3 = Color3.fromRGB(80,55,185)
+togBtn.BorderSizePixel  = 0
+togBtn.Text             = "⏸  Auto Farm: ON"
+togBtn.TextColor3       = Color3.fromRGB(255,255,255)
+togBtn.TextSize         = 13
+togBtn.Font             = Enum.Font.GothamBold
+togBtn.Parent           = frame
+local tbc = Instance.new("UICorner"); tbc.CornerRadius = UDim.new(0,9); tbc.Parent = togBtn
+
+-- Phase label
+local phaseLbl = makeLabel(182, "Phase 1: Farm 5 Rebirths", Color3.fromRGB(160,140,255))
+
+local function setStatus(s) statusLbl.Text = "Status: " .. s end
+
+togBtn.MouseButton1Click:Connect(function()
+    autoFarm = not autoFarm
+    if autoFarm then
+        togBtn.Text             = "⏸  Auto Farm: ON"
+        togBtn.BackgroundColor3 = Color3.fromRGB(80,55,185)
+    else
+        togBtn.Text             = "▶  Auto Farm: OFF"
+        togBtn.BackgroundColor3 = Color3.fromRGB(120,40,40)
+    end
+end)
+
+-- hover tween
+togBtn.MouseEnter:Connect(function()
+    TweenService:Create(togBtn, TweenInfo.new(.15), {BackgroundColor3 = autoFarm and Color3.fromRGB(100,75,210) or Color3.fromRGB(150,55,55)}):Play()
+end)
+togBtn.MouseLeave:Connect(function()
+    TweenService:Create(togBtn, TweenInfo.new(.15), {BackgroundColor3 = autoFarm and Color3.fromRGB(80,55,185) or Color3.fromRGB(120,40,40)}):Play()
+end)
+
+-- ──────────────────────────────────────
+--  COLLECT LOOP (parallel)
+-- ──────────────────────────────────────
+task.spawn(function()
+    while true do
+        task.wait(COLLECT_INTERVAL)
+        if autoFarm then
+            teleportToCollector()
+        end
+    end
+end)
+
+-- ──────────────────────────────────────
+--  MAIN FARM LOOP
+-- ──────────────────────────────────────
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+
+        if not autoFarm then
+            setStatus("Paused")
+            task.wait(1)
+            continue
+        end
+
+        local tycoon = getTycoon()
+        if not tycoon then
+            setStatus("⚠ Tycoon not found")
+            print("[AutoFarm] PlayerTycoons/" .. username .. " not found yet")
+            task.wait(3)
+            continue
+        end
+
+        local remote = tycoon:FindFirstChild("RemoteFunction")
+        local folder = tycoon:FindFirstChild("ButtonFolder")
+        if not remote then
+            setStatus("⚠ RemoteFunction missing")
+            print("[AutoFarm] RemoteFunction not found in tycoon")
+            task.wait(3)
+            continue
+        end
+        if not folder then
+            setStatus("⚠ ButtonFolder missing")
+            print("[AutoFarm] ButtonFolder not found in tycoon")
+            task.wait(3)
+            continue
+        end
+        print("[AutoFarm] Tycoon OK — buttons:", #folder:GetChildren())
+
+        -- Update HUD
+        local money    = getMoney()
+        local rebirths = getRebirths()
+        moneyLbl.Text   = "Money: $" .. string.format("%d", money)
+        rebirthLbl.Text = "Rebirths: " .. rebirths .. " / " .. REBIRTH_TARGET
+
+        -- Phase 1 complete check
+        if rebirths >= REBIRTH_TARGET then
+            phase1Complete  = true
+            autoFarm        = false
+            togBtn.Text             = "▶  Auto Farm: OFF"
+            togBtn.BackgroundColor3 = Color3.fromRGB(120,40,40)
+            setStatus("🎉 Phase 1 Complete!")
+            phaseLbl.Text   = "🎉 Phase 1 Done! (5 Rebirths)"
+            phaseLbl.TextColor3 = Color3.fromRGB(255,215,0)
+            print("[AutoFarm] 🎉 Phase 1 complete — " .. REBIRTH_TARGET .. " rebirths reached!")
+            continue
+        end
+
+        -- ── 1. Priority buttons (in order) ──
+        setStatus("Buying priority buttons…")
+        for _, name in ipairs(PRIORITY_BUTTONS) do
+            if not autoFarm then break end
+            if folder:FindFirstChild(name) then
+                buyBtn(remote, name)
+                task.wait(BUY_DELAY)
+            end
+        end
+
+        -- ── 2. Any remaining Worker buttons ──
+        setStatus("Buying extra workers…")
+        for _, b in ipairs(folder:GetChildren()) do
+            if not autoFarm then break end
+            if b.Name:lower():find("worker") then
+                buyBtn(remote, b.Name)
+                task.wait(BUY_DELAY)
+            end
+        end
+
+        -- ── 3. Worker status ──
+        allWorkersDone = not hasWorkerButtons(folder)
+        if allWorkersDone then
+            workerLbl.Text      = "Workers: ✓ All bought"
+            workerLbl.TextColor3 = Color3.fromRGB(90,230,90)
+        else
+            workerLbl.Text      = "Workers: buying…"
+            workerLbl.TextColor3 = Color3.fromRGB(255,200,70)
+        end
+
+        -- ── 4. Buy everything else ──
+        setStatus("Buying remaining buttons…")
+        for _, b in ipairs(folder:GetChildren()) do
+            if not autoFarm then break end
+            buyBtn(remote, b.Name)
+            task.wait(BUY_DELAY)
+        end
+
+        -- ── 5. Rebirth check ──
+        money    = getMoney()
+        rebirths = getRebirths()
+        moneyLbl.Text   = "Money: $" .. string.format("%d", money)
+        rebirthLbl.Text = "Rebirths: " .. rebirths .. " / " .. REBIRTH_TARGET
+
+        if allWorkersDone and money >= MONEY_TO_REBIRTH then
+            print(string.format("[AutoFarm] ✓ $%d reached — all workers bought! Rebirthing (%d/%d)…",
+                money, rebirths + 1, REBIRTH_TARGET))
+            setStatus("💫 Rebirthing!")
+            pcall(function()
+                workspace.PlayerTycoons[username].Rebirth:InvokeServer()
+            end)
+            task.wait(4)
+        elseif allWorkersDone then
+            setStatus(string.format("Farming $200k… ($%d / $200,000)", math.floor(money)))
+        else
+            setStatus("Unlocking workers…")
+        end
+    end
+end)
+
+print("[AutoFarm] Loaded for: " .. username)
