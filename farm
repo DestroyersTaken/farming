@@ -456,48 +456,52 @@ task.spawn(function()
             continue
         end
 
-        -- Early rebirth check: if already at $200k+ skip buying and go straight to rebirth
-        if getMoney() >= MONEY_TO_REBIRTH then
-            -- jump to rebirth section below by skipping the buy loop
-            goto rebirthCheck
-        end
+        -- If already at $200k+, skip buying and go straight to rebirth
+        local skipBuyLoop = getMoney() >= MONEY_TO_REBIRTH
 
-        -- Buy loop: priority first, workers if no priority, re-scan each pass
-        local emptyCount = 0
-        while running and autoFarm and not campActive and emptyCount < EMPTY_PASSES do
-            local hasPriority = false
-            for _, name in ipairs(PHASE1_PRIORITY) do
-                if folder:FindFirstChild(name) then hasPriority = true break end
-            end
-            local hasWorker = false
-            for _, b in ipairs(folder:GetChildren()) do
-                if b.Name:lower():find("worker") then hasWorker = true break end
-            end
+        if not skipBuyLoop then
+            -- Buy loop: priority first, workers if no priority, re-scan each pass
+            local emptyCount = 0
+            while running and autoFarm and not campActive and emptyCount < EMPTY_PASSES do
+                -- Also break out if we hit $200k mid-buy
+                if getMoney() >= MONEY_TO_REBIRTH then break end
 
-            if not hasPriority and not hasWorker then
-                emptyCount = emptyCount + 1
-                setStatus("Waiting for unlocks... ("..emptyCount.."/"..EMPTY_PASSES..")")
-                task.wait(1.5)
-            else
-                emptyCount = 0
-                if hasPriority then
-                    setStatus("Buying priority buttons...")
-                    for _, name in ipairs(PHASE1_PRIORITY) do
-                        if not running or not autoFarm or campActive then break end
-                        if folder:FindFirstChild(name) then
-                            smartBuy(remote, folder, name)
-                        end
-                    end
-                else
-                    setStatus("Buying workers...")
-                    for _, b in ipairs(folder:GetChildren()) do
-                        if not running or not autoFarm or campActive then break end
-                        if b.Name:lower():find("worker") then
-                            smartBuy(remote, folder, b.Name)
-                        end
-                    end
+                local hasPriority = false
+                for _, name in ipairs(PHASE1_PRIORITY) do
+                    if folder:FindFirstChild(name) then hasPriority = true break end
                 end
-                task.wait(1)
+                local hasWorker = false
+                for _, b in ipairs(folder:GetChildren()) do
+                    if b.Name:lower():find("worker") then hasWorker = true break end
+                end
+
+                if not hasPriority and not hasWorker then
+                    emptyCount = emptyCount + 1
+                    setStatus("Waiting for unlocks... ("..emptyCount.."/"..EMPTY_PASSES..")")
+                    task.wait(1.5)
+                else
+                    emptyCount = 0
+                    if hasPriority then
+                        setStatus("Buying priority buttons...")
+                        for _, name in ipairs(PHASE1_PRIORITY) do
+                            if not running or not autoFarm or campActive then break end
+                            if getMoney() >= MONEY_TO_REBIRTH then break end
+                            if folder:FindFirstChild(name) then
+                                smartBuy(remote, folder, name)
+                            end
+                        end
+                    else
+                        setStatus("Buying workers...")
+                        for _, b in ipairs(folder:GetChildren()) do
+                            if not running or not autoFarm or campActive then break end
+                            if getMoney() >= MONEY_TO_REBIRTH then break end
+                            if b.Name:lower():find("worker") then
+                                smartBuy(remote, folder, b.Name)
+                            end
+                        end
+                    end
+                    task.wait(1)
+                end
             end
         end
 
@@ -507,12 +511,10 @@ task.spawn(function()
             if b.Name:lower():find("worker") then hasW = true break end
         end
         allWorkersDone = not hasW
-        workerLbl.Text = allWorkersDone and "Workers: ✓ All bought" or "Workers: buying…"
+        workerLbl.Text = allWorkersDone and "Workers: All bought" or "Workers: buying..."
         workerLbl.TextColor3 = allWorkersDone and Color3.fromRGB(85,222,85) or Color3.fromRGB(255,198,65)
 
         -- Rebirth check — trigger at $200k regardless of worker status
-        -- (workers that need rebirths to unlock will remain in folder, that's fine)
-        ::rebirthCheck::
         local money = getMoney()
         print(string.format("[Rebirth Check] money=%d | need=%d", money, MONEY_TO_REBIRTH))
 
@@ -523,32 +525,32 @@ task.spawn(function()
             else
                 local rebirthDone = false
                 while running and autoFarm and not rebirthDone do
-                    setStatus("💫 Attempting rebirth…")
+                    setStatus("Attempting rebirth...")
                     local ok, result = pcall(function() return rebirthRemote:InvokeServer() end)
                     print("[AutoFarm] Rebirth result:", ok, result)
                     if ok and result ~= false then
-                        print("[AutoFarm] ✓ Rebirth successful!")
+                        print("[AutoFarm] Rebirth successful!")
                         rebirthDone = true
                         task.wait(5)
                     else
-                        warn("[AutoFarm] Rebirth false — buying one pass all buttons…")
+                        warn("[AutoFarm] Rebirth false - buying one pass all buttons...")
                         local btns = folder:GetChildren()
-                        setStatus("Buying all buttons… ("..#btns.." found)")
+                        setStatus("Buying all buttons... ("..#btns.." found)")
                         for _, b in ipairs(btns) do
                             if not running or not autoFarm then break end
                             fireRemote(remote, b.Name); task.wait(BUY_DELAY)
                         end
                         while running and autoFarm and getMoney() < MONEY_TO_REBIRTH do
                             task.wait(2); teleportToCollector()
-                            setStatus("Farming $200k… $"..tostring(getMoney()).." / $200,000")
+                            setStatus("Farming $200k... $"..tostring(getMoney()).." / $200,000")
                         end
-                        print("[AutoFarm] $200k hit — retrying rebirth…")
+                        print("[AutoFarm] $200k hit - retrying rebirth...")
                     end
                 end
             end
             task.wait(2)
         else
-            setStatus("Farming $200k… $"..tostring(money).." / $200,000")
+            setStatus("Farming $200k... $"..tostring(money).." / $200,000")
         end
     end
 end)
