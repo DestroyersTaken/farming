@@ -481,11 +481,39 @@ task.spawn(function()
             continue
         end
 
-        -- STEP 1: Buy all FREE buttons immediately (no money wait)
-        setStatus("Buying FREE buttons...")
-        buyFreeButtons(remote, folder)
+        -- STEP 1: Buy priority buttons then workers (normal flow)
+        local hasPriority = false
+        for _, name in ipairs(PHASE1_PRIORITY) do
+            if folder:FindFirstChild(name) then hasPriority = true break end
+        end
 
-        -- STEP 2: Try rebirth after FREE buttons
+        if hasPriority then
+            setStatus("Buying priority buttons...")
+            for _, name in ipairs(PHASE1_PRIORITY) do
+                if not running or not autoFarm or campActive then break end
+                if getMoney() >= MONEY_TO_REBIRTH then break end
+                if folder:FindFirstChild(name) then
+                    smartBuy(remote, folder, name)
+                end
+            end
+        else
+            setStatus("Buying workers...")
+            for _, b in ipairs(folder:GetChildren()) do
+                if not running or not autoFarm or campActive then break end
+                if getMoney() >= MONEY_TO_REBIRTH then break end
+                if b.Name:lower():find("worker") then
+                    smartBuy(remote, folder, b.Name)
+                end
+            end
+        end
+
+        -- STEP 2: Farm to $200k
+        while running and autoFarm and not campActive and getMoney() < MONEY_TO_REBIRTH do
+            task.wait(2); teleportToCollector()
+            setStatus("Farming $200k... $"..tostring(getMoney()).." / $200,000")
+        end
+
+        -- STEP 3: Attempt rebirth
         local rebirthRemote = tycoon:WaitForChild("Rebirth", 10)
         if not rebirthRemote then
             warn("[AutoFarm] Rebirth remote not found!")
@@ -493,58 +521,30 @@ task.spawn(function()
         else
             local rebirthDone = false
             while running and autoFarm and not rebirthDone do
-                -- Check if we have $200k before attempting
-                if getMoney() < MONEY_TO_REBIRTH then
-                    -- Don't have 200k yet — skip straight to earn phase
+                setStatus("Attempting rebirth...")
+                local ok, result = pcall(function() return rebirthRemote:InvokeServer() end)
+                print("[AutoFarm] Rebirth result:", ok, result)
+
+                if ok and result ~= false then
+                    print("[AutoFarm] Rebirth successful!")
+                    rebirthDone = true
+                    task.wait(5)
                 else
-                    setStatus("Attempting rebirth...")
-                    local ok, result = pcall(function() return rebirthRemote:InvokeServer() end)
-                    print("[AutoFarm] Rebirth result:", ok, result)
-                    if ok and result ~= false then
-                        print("[AutoFarm] Rebirth successful!")
-                        rebirthDone = true
-                        task.wait(5)
-                        break  -- exit rebirth loop, outer loop will re-run
+                    -- Rebirth failed: buy FREE buttons first, then all others, then wait $200k
+                    warn("[AutoFarm] Rebirth false - buying FREE buttons then all others...")
+                    buyFreeButtons(remote, folder)  -- FREE ones first, no wait
+                    local btns = folder:GetChildren()
+                    setStatus("Buying all buttons... ("..#btns.." found)")
+                    for _, b in ipairs(btns) do
+                        if not running or not autoFarm then break end
+                        fireRemote(remote, b.Name); task.wait(BUY_DELAY)
                     end
-                end
-
-                -- Rebirth false or no money yet:
-                -- STEP 3: Buy FREE buttons (in case new ones unlocked) then paid buttons
-                warn("[AutoFarm] Buying paid buttons to progress...")
-                buyFreeButtons(remote, folder)  -- grab any new freebies first
-
-                -- Buy priority then workers with price waits, stop at $200k
-                local hasPriority = false
-                for _, name in ipairs(PHASE1_PRIORITY) do
-                    if folder:FindFirstChild(name) then hasPriority = true break end
-                end
-
-                if hasPriority then
-                    setStatus("Buying priority buttons...")
-                    for _, name in ipairs(PHASE1_PRIORITY) do
-                        if not running or not autoFarm or campActive then break end
-                        if getMoney() >= MONEY_TO_REBIRTH then break end
-                        if folder:FindFirstChild(name) then
-                            smartBuy(remote, folder, name)
-                        end
+                    while running and autoFarm and getMoney() < MONEY_TO_REBIRTH do
+                        task.wait(2); teleportToCollector()
+                        setStatus("Farming $200k... $"..tostring(getMoney()).." / $200,000")
                     end
-                else
-                    setStatus("Buying workers...")
-                    for _, b in ipairs(folder:GetChildren()) do
-                        if not running or not autoFarm or campActive then break end
-                        if getMoney() >= MONEY_TO_REBIRTH then break end
-                        if b.Name:lower():find("worker") then
-                            smartBuy(remote, folder, b.Name)
-                        end
-                    end
+                    print("[AutoFarm] $200k hit - retrying rebirth...")
                 end
-
-                -- STEP 4: Farm to $200k then retry rebirth
-                while running and autoFarm and getMoney() < MONEY_TO_REBIRTH do
-                    task.wait(2); teleportToCollector()
-                    setStatus("Farming $200k... $"..tostring(getMoney()).." / $200,000")
-                end
-                print("[AutoFarm] $200k hit - retrying rebirth...")
             end
         end
 
