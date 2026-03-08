@@ -448,13 +448,15 @@ task.spawn(function()
             money, tostring(allWorkersDone), MONEY_TO_REBIRTH))
 
         if allWorkersDone and money >= MONEY_TO_REBIRTH then
-            -- Keep trying to rebirth until the server confirms success
+            -- Keep trying to rebirth until the server confirms success.
+            -- Cycle: attempt → if false → buy all buttons → wait $200k → attempt again.
             local rebirthRemote = tycoon:WaitForChild("Rebirth", 10)
             if not rebirthRemote then
                 warn("[AutoFarm] Rebirth remote not found!")
             else
                 local rebirthDone = false
                 while autoFarm and not rebirthDone do
+                    -- 1) Attempt rebirth
                     setStatus("💫 Attempting rebirth…")
                     local ok, result = pcall(function()
                         return rebirthRemote:InvokeServer()
@@ -462,34 +464,40 @@ task.spawn(function()
                     print("[AutoFarm] Rebirth result:", ok, result)
 
                     if ok and result ~= false then
-                        -- Server confirmed rebirth succeeded
                         print("[AutoFarm] ✓ Rebirth successful!")
                         rebirthDone = true
-                        task.wait(5) -- wait for tycoon to reset
+                        task.wait(5)
                     else
-                        -- Rebirth returned false — buy ALL remaining buttons then retry
-                        warn("[AutoFarm] Rebirth returned false — buying all buttons then retrying…")
-                        setStatus("Buying all buttons for rebirth…")
-
-                        -- Buy EVERYTHING in the folder (no filter)
-                        local anyBought = true
-                        while autoFarm and anyBought do
-                            anyBought = false
-                            for _, b in ipairs(folder:GetChildren()) do
-                                if not autoFarm then break end
-                                fireRemote(remote, b.Name)
-                                task.wait(BUY_DELAY)
-                                anyBought = true
+                        -- 2) Rebirth failed — buy every button available (rescan until nothing left)
+                        warn("[AutoFarm] Rebirth false — buying all buttons then retrying…")
+                        local passEmpty = 0
+                        while autoFarm and passEmpty < 3 do
+                            local btns = folder:GetChildren()
+                            if #btns == 0 then
+                                passEmpty = passEmpty + 1
+                                setStatus("Checking for new unlocks… (" .. passEmpty .. "/3)")
+                                task.wait(1.5)
+                            else
+                                passEmpty = 0
+                                setStatus("Buying all buttons for rebirth… (" .. #btns .. " left)")
+                                for _, b in ipairs(btns) do
+                                    if not autoFarm then break end
+                                    fireRemote(remote, b.Name)
+                                    task.wait(BUY_DELAY)
+                                end
+                                task.wait(1)
                             end
-                            task.wait(1) -- wait for newly unlocked buttons
                         end
 
-                        -- Now wait until we have $200k again before retrying
-                        setStatus("Waiting for $200k to retry rebirth…")
+                        -- 3) Wait for $200k before trying rebirth again
+                        setStatus("Waiting for $200k to retry rebirth… ($" .. tostring(getMoney()) .. ")")
                         while autoFarm and getMoney() < MONEY_TO_REBIRTH do
                             task.wait(2)
                             teleportToCollector()
+                            setStatus("Farming $200k for rebirth… $" .. tostring(getMoney()) .. " / $200,000")
                         end
+                        print("[AutoFarm] $200k reached — retrying rebirth…")
+                        -- Loop back to attempt rebirth again
                     end
                 end
             end
