@@ -60,7 +60,10 @@ end
 local function getMoney()
     if not leaderstats then return 0 end
     local v = leaderstats:FindFirstChild("Cash")
-    return math.floor(tonumber(v and v.Value) or 0)
+    if not v then return 0 end
+    -- Strip commas in case the value is formatted like "1,500"
+    local raw = tostring(v.Value):gsub(",", "")
+    return math.floor(tonumber(raw) or 0)
 end
 
 local function getRebirths()
@@ -203,13 +206,26 @@ end)
 --  HUD UPDATE LOOP  (every 0.5s, independent of buy loop)
 -- ──────────────────────────────────────────────────────────
 task.spawn(function()
+    local debugTick = 0
     while true do
         task.wait(0.5)
         local m = getMoney()
         local r = getRebirths()
-        -- Use tostring to avoid any format errors
         moneyLbl.Text   = "Money: $" .. tostring(m)
         rebirthLbl.Text = "Rebirths: " .. tostring(r) .. " / " .. tostring(REBIRTH_TARGET)
+
+        -- Debug print every 5 seconds so you can verify raw Cash value
+        debugTick = debugTick + 0.5
+        if debugTick >= 5 then
+            debugTick = 0
+            if leaderstats then
+                local cashObj = leaderstats:FindFirstChild("Cash")
+                print("[Debug] Raw Cash.Value =", cashObj and tostring(cashObj.Value) or "NIL",
+                    "| parsed =", m,
+                    "| Rebirths =", r,
+                    "| allWorkersDone =", allWorkersDone)
+            end
+        end
     end
 end)
 
@@ -349,13 +365,21 @@ task.spawn(function()
         local money = getMoney()
         rebirths    = getRebirths()
 
+        print(string.format("[Rebirth Check] money=%d | allWorkersDone=%s | need=%d",
+            money, tostring(allWorkersDone), MONEY_TO_REBIRTH))
+
         if allWorkersDone and money >= MONEY_TO_REBIRTH then
-            print(string.format("[AutoFarm] ✓ $%d reached + all workers! Rebirthing (%d/%d)…",
+            print(string.format("[AutoFarm] ✓ $%d reached + workers done! Rebirthing (%d/%d)…",
                 money, rebirths + 1, REBIRTH_TARGET))
             setStatus("💫 Rebirthing!")
-            pcall(function()
+            local ok, err = pcall(function()
                 workspace.PlayerTycoons[username].Rebirth:InvokeServer()
             end)
+            if ok then
+                print("[AutoFarm] ✓ Rebirth fired successfully")
+            else
+                warn("[AutoFarm] ✗ Rebirth failed: " .. tostring(err))
+            end
             task.wait(5)
         elseif allWorkersDone then
             setStatus("Farming $200k… $" .. tostring(money) .. " / $200,000")
