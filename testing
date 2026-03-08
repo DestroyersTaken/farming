@@ -1,5 +1,5 @@
 local args = {
-    [1] = 1
+    [1] = 2;
 }
 
-game:GetService("ReplicatedStorage").Packages._Index:FindFirstChild("sleitnick_knit@1.5.1").knit.Services.ABTestingService.RF.GetGetLocalTycoonName:InvokeServer(unpack(args))
+game:GetService("ReplicatedStorage"):WaitForChild("Packages", 9e9):WaitForChild("_Index", 9e9):WaitForChild("sleitnick_knit@1.5.1", 9e9):WaitForChild("knit", 9e9):WaitForChild("Services", 9e9):WaitForChild("TycoonService", 9e9):WaitForChild("RF", 9e9):WaitForChild("SetBase", 9e9):InvokeServer(unpack(args))USA")
