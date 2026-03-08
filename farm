@@ -108,9 +108,13 @@ local function teleportToCollector()
 end
 
 local function buyBtn(remote, name)
-    pcall(function()
+    print("[Buy] InvokeServer(BuyButton, " .. name .. ")")
+    local ok, err = pcall(function()
         remote:InvokeServer("BuyButton", name)
     end)
+    if not ok then
+        print("[Buy] ERROR on " .. name .. ": " .. tostring(err))
+    end
 end
 
 local function hasWorkerButtons(folder)
@@ -227,6 +231,19 @@ togBtn.MouseLeave:Connect(function()
 end)
 
 -- ──────────────────────────────────────
+--  HUD UPDATE LOOP (fast, parallel)
+-- ──────────────────────────────────────
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        local money    = getMoney()
+        local rebirths = getRebirths()
+        moneyLbl.Text   = "Money: $" .. string.format("%d", money)
+        rebirthLbl.Text = "Rebirths: " .. rebirths .. " / " .. REBIRTH_TARGET
+    end
+end)
+
+-- ──────────────────────────────────────
 --  COLLECT LOOP (parallel)
 -- ──────────────────────────────────────
 task.spawn(function()
@@ -273,13 +290,9 @@ task.spawn(function()
             task.wait(3)
             continue
         end
-        print("[AutoFarm] Tycoon OK — buttons:", #folder:GetChildren())
-
-        -- Update HUD
+        -- local vars for rebirth check (HUD updated by fast loop above)
         local money    = getMoney()
         local rebirths = getRebirths()
-        moneyLbl.Text   = "Money: $" .. string.format("%d", money)
-        rebirthLbl.Text = "Rebirths: " .. rebirths .. " / " .. REBIRTH_TARGET
 
         -- Phase 1 complete check
         if rebirths >= REBIRTH_TARGET then
@@ -335,8 +348,6 @@ task.spawn(function()
         -- ── 5. Rebirth check ──
         money    = getMoney()
         rebirths = getRebirths()
-        moneyLbl.Text   = "Money: $" .. string.format("%d", money)
-        rebirthLbl.Text = "Rebirths: " .. rebirths .. " / " .. REBIRTH_TARGET
 
         if allWorkersDone and money >= MONEY_TO_REBIRTH then
             print(string.format("[AutoFarm] ✓ $%d reached — all workers bought! Rebirthing (%d/%d)…",
