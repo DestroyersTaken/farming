@@ -22,6 +22,11 @@ local STOP_AT_BUTTON   = "Manual" -- buy this, then switch to AFK
 -- Buttons to never buy (post-rebirth phase)
 local SKIP_BUTTONS = {
     Worker_2_Upgrade = true,
+    Barracks_Mission2 = true,
+    Barracks_Mission3 = true,
+    Barracks_Mission4 = true,
+    Barracks_Mission5 = true,
+    Barracks_Mission6 = true,
 }
 
 -- ──────────────────────────────────────────────────────────
