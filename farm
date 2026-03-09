@@ -28,6 +28,7 @@ local SKIP_BUTTONS = {
     Barracks_Mission5 = true,
     Barracks_Mission6 = true,
     GuidedMissile = true,
+    Weapon15 = true,
 }
 
 -- ──────────────────────────────────────────────────────────
