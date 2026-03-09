@@ -11,7 +11,7 @@ local username     = localPlayer.Name
 -- ──────────────────────────────────────────────────────────
 --  SETTINGS
 -- ──────────────────────────────────────────────────────────
-local BUY_DELAY        = 0.5
+local BUY_DELAY        = 0.2
 local COLLECT_INTERVAL = 2
 local MONEY_TO_REBIRTH = 150000   -- 150k needed for first rebirth
 local AFK_INTERVAL     = 300      -- seconds between AFK teleports (5 min)
