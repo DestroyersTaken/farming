@@ -674,24 +674,25 @@ task.spawn(function()
             if now - lastTeleport >= AFK_INTERVAL then
                 lastTeleport = now
 
-                -- Fire Close remote first to reset the AFK station so it re-registers
+                -- Fire Close remote to reset the AFK station (best-effort, never blocks teleport)
                 pcall(function()
-                    local tycoon = getTycoon()
-                    tycoon:WaitForChild("Models", 9e9)
-                        :WaitForChild("AfkShooting", 9e9)
-                        :WaitForChild("ManualWorker", 9e9)
-                        :WaitForChild("ShootForMoney", 9e9)
-                        :WaitForChild("__comm__", 9e9)
-                        :WaitForChild("RE", 9e9)
-                        :WaitForChild("Close", 9e9)
-                        :FireServer()
+                    local tycoon = getTycoon(); if not tycoon then return end
+                    local models = tycoon:FindFirstChild("Models"); if not models then return end
+                    local afk    = models:FindFirstChild("AfkShooting"); if not afk then return end
+                    local mw     = afk:FindFirstChild("ManualWorker"); if not mw then return end
+                    local sfm    = mw:FindFirstChild("ShootForMoney"); if not sfm then return end
+                    local comm   = sfm:FindFirstChild("__comm__"); if not comm then return end
+                    local re     = comm:FindFirstChild("RE"); if not re then return end
+                    local close  = re:FindFirstChild("Close"); if not close then return end
+                    close:FireServer()
+                    print("[AFK] Close remote fired")
                 end)
-                task.wait(0.5)
+                task.wait(0.3)
 
-                -- Now teleport onto the part
+                -- Teleport onto the part — proximity trigger re-opens the station
                 teleportTo(afkPart)
                 setStatus("AFK teleport to AutoEquipWeapon")
-                print("[AFK] Closed + teleported to AutoEquipWeapon")
+                print("[AFK] Teleported to AutoEquipWeapon")
             else
                 local rem = math.ceil(AFK_INTERVAL - (tick() - lastTeleport))
                 setStatus("AFK - next teleport in " .. rem .. "s")
