@@ -687,15 +687,10 @@ task.spawn(function()
                     close:FireServer()
                     print("[AFK] Close remote fired")
                 end)
-                task.wait(0.3)
+                task.wait(2)  -- wait for server to process the Close reset
 
-                -- Teleport onto the part — higher offset so player lands ON the touch trigger
-                local hrp = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-                local partCF = afkPart:IsA("BasePart") and afkPart.CFrame or
-                    (afkPart:FindFirstChildWhichIsA("BasePart", true) and afkPart:FindFirstChildWhichIsA("BasePart", true).CFrame)
-                if hrp and partCF then
-                    hrp.CFrame = partCF + Vector3.new(0, 8, 0)
-                end
+                -- Teleport onto the part
+                teleportTo(afkPart)
                 setStatus("AFK teleport to AutoEquipWeapon")
                 print("[AFK] Teleported to AutoEquipWeapon")
             else
