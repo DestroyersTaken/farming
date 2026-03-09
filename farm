@@ -1,80 +1,644 @@
 -- ============================================================
---  Tycoon Selector | Delta Executor
---  Run this BEFORE the auto farm script
+--  Tycoon Auto Farm | Single Tycoon | 1 Rebirth → AFK
 -- ============================================================
 
-local RS = game:GetService("ReplicatedStorage")
+local Players      = game:GetService("Players")
+local RS           = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local localPlayer  = Players.LocalPlayer
+local username     = localPlayer.Name
 
 -- ──────────────────────────────────────────────────────────
 --  SETTINGS
 -- ──────────────────────────────────────────────────────────
-local TYCOON_REGION = "USA"   -- region to select
-local BASE_NUM      = 2        -- base slot number
-local DELAY         = 2        -- seconds to wait before firing
+local BUY_DELAY        = 0.5
+local COLLECT_INTERVAL = 2
+local MONEY_TO_REBIRTH = 150000   -- 150k needed for first rebirth
+local AFK_INTERVAL     = 300      -- seconds between AFK teleports (5 min)
+local EMPTY_PASSES     = 3        -- how many empty scans before giving up
+local TYCOON_REGION    = "USA"
+local STOP_AT_BUTTON   = "Manual" -- buy this last then switch to AFK
+
+-- ──────────────────────────────────────────────────────────
+--  BUTTON PRIORITY LIST  (in order; buy all of these, then
+--  buy everything else until Manual is found)
+-- ──────────────────────────────────────────────────────────
+local PRIORITY = {
+    "Start",          -- initialise tycoon on first run
+    "Worker_1", "Worker_2",
+    "NewBase_FirstFloor_SGwall3", "NewBase_FirstFloor_SGWindow1",
+    "NewBase_FirstFloor_SGLaserDoor1", "NewBase_FirstFloor_SGWall2",
+    "NewBase_FirstFloor_SGWall4", "NewBase_FirstFloor_SGWindow2",
+    "NewBase_FirstFloor_SGWall1", "NewBase_FirstFloor_SGLaserDoor2",
+    "NewBase_FirstFloor_Wall1", "NewBase_FirstFloor_Wall5",
+    "NewBase_FirstFloor_Wall4", "NewBase_FirstFloor_Wall8",
+    "NewBase_FirstFloor_Wall3", "NewBase_FirstFloor_Wall2",
+    "NewBase_FirstFloor_Wall7", "NewBase_FirstFloor_Wall6",
+    "NewBase_FirstFloor_Windows", "NewBase_FirstFloor_Path1",
+    "NewBase_FirstFloor_Door1", "NewBase_FirstFloor_Door2",
+    "NewBase_FirstFloor_RoofBeams",
+    "NewBase_FirstFloor_LaserDoor1", "NewBase_FirstFloor_LaserDoor2",
+    "NewBase_FirstFloor_SGSigns", "Weapon1",
+    "NewBase_FirstFloor_Roof", "MapTable",
+    "NewBase_FirstFloor_RoofLights", "Spinner",
+    "Worker_3", "Worker_4", "Worker_5", "Worker_6",
+    "Worker_1_Upgrade",
+    "NewBase_FirstFloor_SGRange",
+    "Weapon2", "Weapon4",
+    "Outside_Path1",
+    -- After Outside_Path1: buy EVERYTHING from folder until Manual
+}
+
+-- ──────────────────────────────────────────────────────────
+--  STATE
+-- ──────────────────────────────────────────────────────────
+local running      = true    -- set false by exit button
+local autoFarm     = true    -- toggled by GUI button
+local campActive   = false
+local afkMode      = false   -- true once AutoEquipWeapon is found
+local manualBought = false   -- true once Manual is purchased
+local selectorDone = false
+local setStatus    = function(s) end  -- forward decl; real fn set after GUI
+
+-- ──────────────────────────────────────────────────────────
+--  WAIT FOR LEADERSTATS
+-- ──────────────────────────────────────────────────────────
+local leaderstats = localPlayer:WaitForChild("leaderstats", 20)
+if leaderstats then
+    local cv = leaderstats:FindFirstChild("Cash")
+    local rv = leaderstats:FindFirstChild("Rebirths")
+    print("[AutoFarm] leaderstats OK | Cash =", cv and tostring(cv.Value), "| Rebirths =", rv and tostring(rv.Value))
+else
+    warn("[AutoFarm] leaderstats not found!")
+end
 
 -- ──────────────────────────────────────────────────────────
 --  HELPERS
 -- ──────────────────────────────────────────────────────────
-local function getKnitServices()
+local function parseCash(raw)
+    raw = tostring(raw):gsub("%$",""):gsub(",",""):gsub("%s+","")
+    local num, suffix = raw:match("^([%d%.]+)([KkMmBbTt]?)$")
+    if num then
+        local n = tonumber(num) or 0
+        local mult = ({K=1e3,M=1e6,B=1e9,T=1e12})[suffix and suffix:upper()] or 1
+        return math.floor(n * mult)
+    end
+    return math.floor(tonumber(raw) or 0)
+end
+
+local function getMoney()
+    if not leaderstats then return 0 end
+    local v = leaderstats:FindFirstChild("Cash")
+    if not v then return 0 end
+    return parseCash(v.Value)
+end
+
+local function getRebirths()
+    if not leaderstats then return 0 end
+    local v = leaderstats:FindFirstChild("Rebirths")
+    return math.floor(tonumber(v and v.Value) or 0)
+end
+
+local function getTycoon()
+    local pt = workspace:FindFirstChild("PlayerTycoons")
+    if not pt then return nil end
+    return pt:FindFirstChild(username)
+end
+
+local function teleportTo(part)
+    local hrp = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not part then return end
+    local cf
+    if part:IsA("BasePart") then
+        cf = part.CFrame
+    else
+        local p = part:FindFirstChildWhichIsA("BasePart", true)
+        cf = p and p.CFrame
+    end
+    if cf then hrp.CFrame = cf + Vector3.new(0, 4, 0) end
+end
+
+local function teleportToCollector()
+    local tycoon = getTycoon()
+    if not tycoon then return end
+    local sg  = tycoon:FindFirstChild("Models") and tycoon.Models:FindFirstChild("StarterGiver")
+    local btn = sg and sg:FindFirstChild("CollectButton")
+    teleportTo(btn)
+end
+
+local function fireRemote(remote, btnName)
+    print("[Buy] InvokeServer(BuyButton, " .. btnName .. ")")
+    local ok, err = pcall(function() remote:InvokeServer("BuyButton", btnName) end)
+    if not ok then warn("[Buy] Error: " .. tostring(err)) end
+end
+
+local function getButtonPrice(btnFolder)
+    local ok, result = pcall(function()
+        local b   = btnFolder:FindFirstChild("Button")
+        local gui = b and b:FindFirstChild("BillboardGui")
+        local frm = gui and gui:FindFirstChild("Frame")
+        local lbl = frm and frm:FindFirstChild("Price")
+        if lbl then return parseCash(lbl.ContentText) end
+        return nil
+    end)
+    return ok and result or nil
+end
+
+local function isButtonFree(btnObj)
+    local ok, result = pcall(function()
+        local b   = btnObj:FindFirstChild("Button")
+        local gui = b and b:FindFirstChild("BillboardGui")
+        local frm = gui and gui:FindFirstChild("Frame")
+        local lbl = frm and frm:FindFirstChild("Price")
+        if lbl then
+            local txt = lbl.ContentText:upper():gsub("%s+","")
+            if txt == "FREE" then return true end
+            return parseCash(lbl.ContentText) == 0
+        end
+        return false
+    end)
+    return ok and result or false
+end
+
+-- Wait for enough money then buy; always attempts even if rebirth label says locked
+local function smartBuy(remote, folder, btnName)
+    local btnObj = folder:FindFirstChild(btnName)
+    if not btnObj then return end
+    local price = getButtonPrice(btnObj)
+    if price and price > 0 then
+        while running and autoFarm and getMoney() < price do
+            if campActive then task.wait(0.5) else
+                setStatus("Saving for " .. btnName .. ": $" .. tostring(getMoney()) .. " / $" .. tostring(price))
+                task.wait(2); teleportToCollector()
+            end
+        end
+    end
+    fireRemote(remote, btnName)
+    task.wait(BUY_DELAY)
+end
+
+-- Buy every FREE button in folder with no money wait
+local function buyFreeButtons(remote, folder)
+    local bought = 0
+    for _, b in ipairs(folder:GetChildren()) do
+        if not running or not autoFarm then break end
+        if isButtonFree(b) then
+            print("[Free] Buying FREE button:", b.Name)
+            fireRemote(remote, b.Name)
+            task.wait(BUY_DELAY)
+            bought = bought + 1
+        end
+    end
+    if bought > 0 then print("[Free] Bought", bought, "FREE buttons") end
+end
+
+local function getAfkPart()
+    local tycoon = getTycoon()
+    if not tycoon then return nil end
+    local m   = tycoon:FindFirstChild("Models"); if not m then return nil end
+    local afk = m:FindFirstChild("AfkShooting"); if not afk then return nil end
+    local mw  = afk:FindFirstChild("ManualWorker"); if not mw then return nil end
+    local sfm = mw:FindFirstChild("ShootForMoney"); if not sfm then return nil end
+    return sfm:FindFirstChild("AutoEquipWeapon")
+end
+
+-- ──────────────────────────────────────────────────────────
+--  KNIT REMOTE HELPER + TYCOON SELECTOR
+-- ──────────────────────────────────────────────────────────
+local function getKnitRF(serviceName)
     return RS
         :WaitForChild("Packages",             9e9)
         :WaitForChild("_Index",               9e9)
         :WaitForChild("sleitnick_knit@1.5.1", 9e9)
         :WaitForChild("knit",                 9e9)
         :WaitForChild("Services",             9e9)
+        :WaitForChild(serviceName,            9e9)
+        :WaitForChild("RF",                   9e9)
 end
 
-local function getTycoonRF()
-    return getKnitServices():WaitForChild("TycoonService", 9e9):WaitForChild("RF", 9e9)
+local function selectTycoon1()
+    print("[Selector] Selecting Tycoon 1")
+    pcall(function() getKnitRF("TycoonService"):WaitForChild("SetBase",9e9):InvokeServer(1) end)
+    task.wait(0.5)
+    pcall(function() getKnitRF("TycoonService"):WaitForChild("Select",9e9):InvokeServer(TYCOON_REGION) end)
+    task.wait(0.5)
+    pcall(function() getKnitRF("OfferService"):WaitForChild("AskAboutLastEvent",9e9):InvokeServer() end)
+    print("[Selector] Tycoon 1 selected")
 end
 
-local function getOfferRF()
-    return getKnitServices():WaitForChild("OfferService", 9e9):WaitForChild("RF", 9e9)
-end
-
--- ──────────────────────────────────────────────────────────
---  STEP 1 — SetBase (pick which base slot)
--- ──────────────────────────────────────────────────────────
-local function setBase(n)
+local function redeemCode(code)
+    print("[Code] Redeeming:", code)
     local ok, err = pcall(function()
-        getTycoonRF():WaitForChild("SetBase", 9e9):InvokeServer(n)
+        getKnitRF("CodeService"):WaitForChild("Redeem", 9e9):InvokeServer(code)
     end)
-    print(ok and ("[Selector] ✓ SetBase: " .. n) or ("[Selector] ✗ SetBase failed: " .. tostring(err)))
+    if ok then print("[Code] Redeemed:", code)
+    else warn("[Code] Failed to redeem", code, ":", tostring(err)) end
 end
 
 -- ──────────────────────────────────────────────────────────
---  STEP 2 — Select (pick region / tycoon)
+--  GUI
 -- ──────────────────────────────────────────────────────────
-local function selectRegion(region)
-    local ok, err = pcall(function()
-        getTycoonRF():WaitForChild("Select", 9e9):InvokeServer(region)
-    end)
-    print(ok and ("[Selector] ✓ Select: " .. region) or ("[Selector] ✗ Select failed: " .. tostring(err)))
+if localPlayer.PlayerGui:FindFirstChild("TycoonFarmGUI") then
+    localPlayer.PlayerGui.TycoonFarmGUI:Destroy()
 end
 
--- ──────────────────────────────────────────────────────────
---  STEP 3 — AskAboutLastEvent (dismisses Choose Base screen)
--- ──────────────────────────────────────────────────────────
-local function dismissChooseBase()
-    local ok, err = pcall(function()
-        getOfferRF():WaitForChild("AskAboutLastEvent", 9e9):InvokeServer()
-    end)
-    print(ok and "[Selector] ✓ Choose Base screen dismissed" or ("[Selector] ✗ AskAboutLastEvent failed: " .. tostring(err)))
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "TycoonFarmGUI"; screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = localPlayer.PlayerGui
+
+local frame = Instance.new("Frame", screenGui)
+frame.Size = UDim2.new(0,240,0,240); frame.Position = UDim2.new(0,12,0,12)
+frame.BackgroundColor3 = Color3.fromRGB(18,12,40)
+frame.BorderSizePixel = 0; frame.Active = true; frame.Draggable = true
+Instance.new("UICorner",frame).CornerRadius = UDim.new(0,12)
+local stroke = Instance.new("UIStroke",frame)
+stroke.Color = Color3.fromRGB(90,60,180); stroke.Thickness = 1.5
+
+local tBar = Instance.new("Frame",frame)
+tBar.Size = UDim2.new(1,0,0,38); tBar.BackgroundColor3 = Color3.fromRGB(30,18,64)
+tBar.BorderSizePixel = 0
+Instance.new("UICorner",tBar).CornerRadius = UDim.new(0,12)
+local tPatch = Instance.new("Frame",tBar)
+tPatch.Size = UDim2.new(1,0,0.5,0); tPatch.Position = UDim2.new(0,0,0.5,0)
+tPatch.BackgroundColor3 = Color3.fromRGB(30,18,64); tPatch.BorderSizePixel = 0
+
+local titleLbl = Instance.new("TextLabel",tBar)
+titleLbl.Size = UDim2.new(1,-50,1,0); titleLbl.Position = UDim2.new(0,12,0,0)
+titleLbl.BackgroundTransparency = 1; titleLbl.Text = "Tycoon Auto Farm"
+titleLbl.TextColor3 = Color3.fromRGB(205,180,255); titleLbl.TextSize = 15
+titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+local exitBtn = Instance.new("TextButton",tBar)
+exitBtn.Size = UDim2.new(0,28,0,28); exitBtn.Position = UDim2.new(1,-34,0,5)
+exitBtn.BackgroundColor3 = Color3.fromRGB(160,40,40); exitBtn.BorderSizePixel = 0
+exitBtn.Text = "X"; exitBtn.TextColor3 = Color3.fromRGB(255,255,255)
+exitBtn.TextSize = 14; exitBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner",exitBtn).CornerRadius = UDim.new(0,6)
+exitBtn.MouseButton1Click:Connect(function()
+    running = false
+    print("[AutoFarm] Exit — stopping all loops")
+    screenGui:Destroy()
+end)
+
+local function mkLabel(y, txt, col)
+    local l = Instance.new("TextLabel",frame)
+    l.Size = UDim2.new(1,-20,0,20); l.Position = UDim2.new(0,10,0,y)
+    l.BackgroundTransparency = 1; l.Text = txt
+    l.TextColor3 = col or Color3.fromRGB(175,170,210)
+    l.TextSize = 12; l.Font = Enum.Font.Gotham
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    return l
 end
 
+local statusLbl  = mkLabel(44,  "Status: Starting...",    Color3.fromRGB(175,170,210))
+local modeLbl    = mkLabel(64,  "Mode: detecting...",      Color3.fromRGB(150,130,255))
+local moneyLbl   = mkLabel(84,  "Money: $0",               Color3.fromRGB(255,218,85))
+local rebirthLbl = mkLabel(104, "Rebirths: 0",             Color3.fromRGB(110,220,135))
+local campLbl    = mkLabel(124, "",                         Color3.fromRGB(255,100,80))
+local afkLbl     = mkLabel(144, "",                         Color3.fromRGB(100,220,255))
+
+local togBtn = Instance.new("TextButton",frame)
+togBtn.Size = UDim2.new(1,-20,0,34); togBtn.Position = UDim2.new(0,10,0,170)
+togBtn.BackgroundColor3 = Color3.fromRGB(75,52,180); togBtn.BorderSizePixel = 0
+togBtn.Text = "Auto Farm: ON"; togBtn.TextColor3 = Color3.fromRGB(255,255,255)
+togBtn.TextSize = 13; togBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner",togBtn).CornerRadius = UDim.new(0,8)
+
+-- Real setStatus assigned now that statusLbl exists
+setStatus = function(s) statusLbl.Text = "Status: "..s end
+
+togBtn.MouseButton1Click:Connect(function()
+    autoFarm = not autoFarm
+    togBtn.Text = autoFarm and "Auto Farm: ON" or "Auto Farm: OFF"
+    togBtn.BackgroundColor3 = autoFarm and Color3.fromRGB(75,52,180) or Color3.fromRGB(115,38,38)
+end)
+togBtn.MouseEnter:Connect(function()
+    TweenService:Create(togBtn,TweenInfo.new(.12),{BackgroundColor3=autoFarm and Color3.fromRGB(95,70,205) or Color3.fromRGB(140,50,50)}):Play()
+end)
+togBtn.MouseLeave:Connect(function()
+    TweenService:Create(togBtn,TweenInfo.new(.12),{BackgroundColor3=autoFarm and Color3.fromRGB(75,52,180) or Color3.fromRGB(115,38,38)}):Play()
+end)
+
 -- ──────────────────────────────────────────────────────────
---  RUN — fire in the order the game expects
+--  HUD LOOP
 -- ──────────────────────────────────────────────────────────
-print("[Selector] Waiting", DELAY, "s before selecting…")
-task.wait(DELAY)
+task.spawn(function()
+    while running do
+        task.wait(0.5)
+        local m = getMoney(); local r = getRebirths()
+        moneyLbl.Text   = "Money: $" .. tostring(m)
+        rebirthLbl.Text = "Rebirths: " .. tostring(r)
+        modeLbl.Text    = afkMode and "Mode: AFK Farm" or (r >= 1 and "Mode: Buying to Manual" or "Mode: Rebirth Farm")
+    end
+end)
 
-setBase(BASE_NUM)
-task.wait(0.5)
+-- ──────────────────────────────────────────────────────────
+--  COLLECT LOOP
+-- ──────────────────────────────────────────────────────────
+task.spawn(function()
+    while running do
+        task.wait(COLLECT_INTERVAL)
+        if not autoFarm or campActive or afkMode then continue end
+        teleportToCollector()
+    end
+end)
 
-selectRegion(TYCOON_REGION)
-task.wait(0.5)
+-- ──────────────────────────────────────────────────────────
+--  CAMP WATCHER LOOP
+-- ──────────────────────────────────────────────────────────
+task.spawn(function()
+    while running do
+        task.wait(0.5)
+        local tycoon = getTycoon()
+        if not tycoon then campActive = false continue end
+        local campsFolder = tycoon:FindFirstChild("Camps")
+        if not campsFolder then campActive = false continue end
+        local camps = campsFolder:GetChildren()
 
-dismissChooseBase()
+        if #camps == 0 then
+            if campActive then
+                campActive = false
+                campLbl.Text = ""
+                print("[Camp] All camps cleared - teleporting back to collector")
+                teleportToCollector()
+            end
+            continue
+        end
 
-print("[Selector] Done — tycoon selected and base screen dismissed.")
+        -- Camp exists — take full control of player position
+        campActive = true
+        local camp = camps[1]
+        campLbl.Text = "Camp: " .. camp.Name
+        setStatus("Clearing camp: " .. camp.Name)
 
+        local campBtn = camp:FindFirstChild("Button")
+        if campBtn then
+            local part
+            if campBtn:IsA("BasePart") then
+                part = campBtn
+            else
+                part = campBtn:FindFirstChildWhichIsA("BasePart", true)
+                if not part then part = camp:FindFirstChildWhichIsA("BasePart", true) end
+            end
+            local hrp = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and part then
+                print("[Camp] Teleporting to", camp.Name, "part:", part.Name)
+                hrp.CFrame = part.CFrame + Vector3.new(0, 5, 0)
+            else
+                warn("[Camp] Could not find HRP or part for", camp.Name)
+            end
+        else
+            warn("[Camp] No Button child in", camp.Name)
+            campLbl.Text = "Camp: " .. camp.Name .. " (no btn)"
+        end
+    end
+end)
+
+-- ──────────────────────────────────────────────────────────
+--  STARTUP — select Tycoon 1, redeem code, decide mode
+-- ──────────────────────────────────────────────────────────
+task.spawn(function()
+    task.wait(2)
+    print("[AutoFarm] Starting up for:", username)
+
+    -- Always select Tycoon 1
+    selectTycoon1()
+    task.wait(2)
+
+    -- Redeem warfund boost code (safe to call on existing accounts)
+    redeemCode("warfund")
+    task.wait(1)
+
+    selectorDone = true
+    print("[AutoFarm] Startup complete | Rebirths =", getRebirths())
+end)
+
+-- ──────────────────────────────────────────────────────────
+--  MAIN FARM LOOP
+-- ──────────────────────────────────────────────────────────
+task.spawn(function()
+    while running do
+        task.wait(1)
+        if not autoFarm then continue end
+        if not selectorDone then setStatus("Waiting for tycoon select...") continue end
+        if campActive then setStatus("Camp active - farm paused") continue end
+        if afkMode then continue end  -- AFK loop handles this
+
+        local tycoon = getTycoon()
+        if not tycoon then setStatus("Tycoon not found") task.wait(3) continue end
+        local remote = tycoon:FindFirstChild("RemoteFunction")
+        local folder = tycoon:FindFirstChild("ButtonFolder")
+        if not remote then setStatus("RemoteFunction missing") task.wait(3) continue end
+        if not folder  then setStatus("ButtonFolder missing")  task.wait(3) continue end
+
+        -- ── Buy Start button if present (first run) ──────
+        if folder:FindFirstChild("Start") then
+            print("[Farm] Buying Start button")
+            setStatus("Buying Start button...")
+            fireRemote(remote, "Start")
+            task.wait(BUY_DELAY + 1)
+        end
+
+        local rebirths = getRebirths()
+
+        -- ── Rebirth check: only rebirth if at 0 ──────────
+        if rebirths < 1 then
+            -- Need 1 rebirth first
+            -- Buy priority/workers with rescan until $150k reached
+            local emptyPasses = 0
+            while running and autoFarm and not campActive and emptyPasses < EMPTY_PASSES do
+                if getMoney() >= MONEY_TO_REBIRTH then break end
+
+                local hasPriority = false
+                for _, name in ipairs(PRIORITY) do
+                    if folder:FindFirstChild(name) then hasPriority = true break end
+                end
+                local hasWorker = false
+                for _, b in ipairs(folder:GetChildren()) do
+                    if b.Name:lower():find("worker") then hasWorker = true break end
+                end
+
+                if not hasPriority and not hasWorker then
+                    emptyPasses = emptyPasses + 1
+                    setStatus("Waiting for buttons... (" .. emptyPasses .. "/" .. EMPTY_PASSES .. ")")
+                    task.wait(2)
+                else
+                    emptyPasses = 0
+                    if hasPriority then
+                        setStatus("Buying priority buttons...")
+                        for _, name in ipairs(PRIORITY) do
+                            if not running or not autoFarm or campActive then break end
+                            if getMoney() >= MONEY_TO_REBIRTH then break end
+                            if folder:FindFirstChild(name) then
+                                smartBuy(remote, folder, name)
+                            end
+                        end
+                    else
+                        setStatus("Buying workers...")
+                        for _, b in ipairs(folder:GetChildren()) do
+                            if not running or not autoFarm or campActive then break end
+                            if getMoney() >= MONEY_TO_REBIRTH then break end
+                            if b.Name:lower():find("worker") then
+                                smartBuy(remote, folder, b.Name)
+                            end
+                        end
+                    end
+                end
+            end
+
+            -- Farm to $150k
+            while running and autoFarm and getMoney() < MONEY_TO_REBIRTH do
+                if campActive then task.wait(0.5) else
+                    setStatus("Farming $150k... $" .. tostring(getMoney()) .. " / $150,000")
+                    task.wait(2); teleportToCollector()
+                end
+            end
+
+            -- Attempt rebirth
+            local rebirthRemote = tycoon:WaitForChild("Rebirth", 10)
+            if not rebirthRemote then
+                warn("[AutoFarm] Rebirth remote not found!")
+                task.wait(3)
+                continue
+            end
+
+            local rebirthDone = false
+            while running and autoFarm and not rebirthDone do
+                if campActive then
+                    setStatus("Camp active - rebirth paused...")
+                    task.wait(0.5)
+                    continue
+                end
+
+                setStatus("Attempting rebirth...")
+                local ok, result = pcall(function() return rebirthRemote:InvokeServer() end)
+                print("[AutoFarm] Rebirth result:", ok, result)
+
+                if ok and result ~= false then
+                    print("[AutoFarm] Rebirth successful!")
+                    rebirthDone = true
+                    task.wait(5)
+                else
+                    warn("[AutoFarm] Rebirth false - buying FREE + all buttons then waiting $150k...")
+                    if not campActive then buyFreeButtons(remote, folder) end
+                    for _, b in ipairs(folder:GetChildren()) do
+                        if not running or not autoFarm or campActive then break end
+                        fireRemote(remote, b.Name); task.wait(BUY_DELAY)
+                    end
+                    while running and autoFarm and getMoney() < MONEY_TO_REBIRTH do
+                        if campActive then task.wait(0.5) else
+                            task.wait(2); teleportToCollector()
+                            setStatus("Farming $150k... $" .. tostring(getMoney()) .. " / $150,000")
+                        end
+                    end
+                    print("[AutoFarm] $150k hit - retrying rebirth...")
+                end
+            end
+
+            -- After successful rebirth, loop restarts and falls into the >=1 branch
+            continue
+        end
+
+        -- ── rebirths >= 1: Buy buttons to Manual then AFK ──
+        -- First check if AutoEquipWeapon already exists
+        if getAfkPart() then
+            print("[Farm] AutoEquipWeapon found - switching to AFK mode")
+            afkMode = true
+            continue
+        end
+
+        -- AutoEquipWeapon not found yet: buy buttons until Manual appears
+        if not manualBought then
+            -- Rescan loop: buy priority/all buttons, but buy Manual the INSTANT it appears
+            local emptyPasses = 0
+            while running and autoFarm and not campActive and not manualBought and emptyPasses < EMPTY_PASSES do
+                -- Check for Manual first — buy it immediately if present
+                if folder:FindFirstChild(STOP_AT_BUTTON) then
+                    setStatus("Buying Manual immediately...")
+                    smartBuy(remote, folder, STOP_AT_BUTTON)
+                    manualBought = true
+                    print("[Farm] Manual bought - checking for AutoEquipWeapon")
+                    break
+                end
+
+                -- Check what's available
+                local hasPriority = false
+                for _, name in ipairs(PRIORITY) do
+                    if folder:FindFirstChild(name) then hasPriority = true break end
+                end
+                local hasAny = #folder:GetChildren() > 0
+
+                if not hasAny then
+                    emptyPasses = emptyPasses + 1
+                    setStatus("No buttons found, waiting... (" .. emptyPasses .. "/" .. EMPTY_PASSES .. ")")
+                    task.wait(2)
+                else
+                    emptyPasses = 0
+                    if hasPriority then
+                        setStatus("Buying priority buttons...")
+                        for _, name in ipairs(PRIORITY) do
+                            if not running or not autoFarm or campActive then break end
+                            -- Check for Manual mid-loop too
+                            if folder:FindFirstChild(STOP_AT_BUTTON) then break end
+                            if folder:FindFirstChild(name) then
+                                smartBuy(remote, folder, name)
+                            end
+                        end
+                    else
+                        -- No priority buttons — buy everything in folder (Manual check at top next pass)
+                        setStatus("Buying all available buttons...")
+                        for _, b in ipairs(folder:GetChildren()) do
+                            if not running or not autoFarm or campActive then break end
+                            if b.Name == STOP_AT_BUTTON then break end  -- stop, let loop top handle it
+                            smartBuy(remote, folder, b.Name)
+                        end
+                    end
+                end
+            end
+        else
+            -- Manual bought - poll for AFK part
+            setStatus("Waiting for AFK station to appear...")
+            task.wait(3)
+            if getAfkPart() then
+                print("[Farm] AutoEquipWeapon appeared - switching to AFK mode")
+                afkMode = true
+            end
+        end
+    end
+end)
+
+-- ──────────────────────────────────────────────────────────
+--  AFK LOOP (runs once afkMode = true)
+-- ──────────────────────────────────────────────────────────
+task.spawn(function()
+    local lastTeleport = 0
+    while running do
+        task.wait(1)
+        if not autoFarm or not afkMode then continue end
+        if campActive then setStatus("Camp active - AFK paused") continue end
+
+        local afkPart = getAfkPart()
+        if afkPart then
+            afkLbl.Text = "AFK Mode active"
+            local now = tick()
+            if now - lastTeleport >= AFK_INTERVAL then
+                lastTeleport = now
+                teleportTo(afkPart)
+                setStatus("AFK teleport to AutoEquipWeapon")
+                print("[AFK] Teleported to AutoEquipWeapon")
+            else
+                local rem = math.ceil(AFK_INTERVAL - (tick() - lastTeleport))
+                setStatus("AFK - next teleport in " .. rem .. "s")
+            end
+        else
+            -- Part disappeared somehow; exit AFK mode and rebuy
+            warn("[AFK] AutoEquipWeapon disappeared - exiting AFK mode")
+            afkMode = false
+            manualBought = false
+            afkLbl.Text = ""
+        end
+    end
+end)
+
+print("[AutoFarm] Loaded for:", username)
