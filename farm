@@ -11,7 +11,7 @@ local username     = localPlayer.Name
 -- ──────────────────────────────────────────────────────────
 --  SETTINGS
 -- ──────────────────────────────────────────────────────────
-local BUY_DELAY        = 0.2
+local BUY_DELAY        = 0.5
 local COLLECT_INTERVAL = 2
 local MONEY_TO_REBIRTH = 150000   -- 150k needed for first rebirth
 local AFK_INTERVAL     = 300      -- seconds between AFK teleports (5 min)
@@ -27,6 +27,7 @@ local SKIP_BUTTONS = {
     Barracks_Mission4 = true,
     Barracks_Mission5 = true,
     Barracks_Mission6 = true,
+    GuidedMissile = true,
 }
 
 -- ──────────────────────────────────────────────────────────
