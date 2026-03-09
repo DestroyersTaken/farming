@@ -17,7 +17,12 @@ local MONEY_TO_REBIRTH = 150000   -- 150k needed for first rebirth
 local AFK_INTERVAL     = 300      -- seconds between AFK teleports (5 min)
 local EMPTY_PASSES     = 3        -- how many empty scans before giving up
 local TYCOON_REGION    = "USA"
-local STOP_AT_BUTTON   = "Manual" -- buy this last then switch to AFK
+local STOP_AT_BUTTON   = "Manual" -- buy this, then switch to AFK
+
+-- Buttons to never buy (post-rebirth phase)
+local SKIP_BUTTONS = {
+    Worker_2_Upgrade = true,
+}
 
 -- ──────────────────────────────────────────────────────────
 --  BUTTON PRIORITY LIST  (in order; buy all of these, then
@@ -581,6 +586,7 @@ task.spawn(function()
                             if not running or not autoFarm or campActive then break end
                             -- Check for Manual mid-loop too
                             if folder:FindFirstChild(STOP_AT_BUTTON) then break end
+                            if SKIP_BUTTONS[name] then continue end  -- skip blocked buttons
                             if folder:FindFirstChild(name) then
                                 smartBuy(remote, folder, name)
                             end
@@ -590,7 +596,8 @@ task.spawn(function()
                         setStatus("Buying all available buttons...")
                         for _, b in ipairs(folder:GetChildren()) do
                             if not running or not autoFarm or campActive then break end
-                            if b.Name == STOP_AT_BUTTON then break end  -- stop, let loop top handle it
+                            if b.Name == STOP_AT_BUTTON then break end  -- let loop top handle it
+                            if SKIP_BUTTONS[b.Name] then continue end   -- skip blocked buttons
                             smartBuy(remote, folder, b.Name)
                         end
                     end
