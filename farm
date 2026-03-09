@@ -357,6 +357,41 @@ task.spawn(function()
 end)
 
 -- ──────────────────────────────────────────────────────────
+--  STALL WATCHDOG — re-teleports to collector if money
+--  stops increasing for 30s while in farm mode (not AFK)
+-- ──────────────────────────────────────────────────────────
+task.spawn(function()
+    local STALL_TIMEOUT = 30  -- seconds before we consider money stalled
+    local lastMoney     = getMoney()
+    local lastChange    = tick()
+
+    while running do
+        task.wait(5)
+        if not autoFarm or afkMode or campActive then
+            -- Reset timer whenever not farming so we don't false-trigger
+            lastMoney  = getMoney()
+            lastChange = tick()
+            continue
+        end
+
+        local now   = tick()
+        local money = getMoney()
+
+        if money ~= lastMoney then
+            -- Money changed — reset stall timer
+            lastMoney  = money
+            lastChange = now
+        elseif now - lastChange >= STALL_TIMEOUT then
+            -- Money stuck for too long — snap back to collector
+            warn("[Watchdog] Money stalled for " .. math.floor(now - lastChange) .. "s — re-teleporting to collector")
+            setStatus("Watchdog: money stalled — re-teleporting!")
+            teleportToCollector()
+            lastChange = now  -- reset so we don't spam
+        end
+    end
+end)
+
+-- ──────────────────────────────────────────────────────────
 --  CAMP WATCHER LOOP
 -- ──────────────────────────────────────────────────────────
 task.spawn(function()
