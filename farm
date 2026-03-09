@@ -687,7 +687,7 @@ task.spawn(function()
                     close:FireServer()
                     print("[AFK] Close remote fired")
                 end)
-                task.wait(2)  -- wait for server to process the Close reset
+                task.wait(4)  -- wait for server to process the Close reset
 
                 -- Teleport onto the part
                 teleportTo(afkPart)
