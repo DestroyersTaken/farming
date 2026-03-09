@@ -403,7 +403,8 @@ task.spawn(function()
             if campActive then
                 campActive = false
                 campLbl.Text = ""
-                print("[Camp] All camps cleared - resuming farm")
+                print("[Camp] All camps cleared - teleporting back to collector")
+                teleportToCollector()  -- snap back immediately
             end
             continue
         end
