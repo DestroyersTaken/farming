@@ -673,9 +673,25 @@ task.spawn(function()
             local now = tick()
             if now - lastTeleport >= AFK_INTERVAL then
                 lastTeleport = now
+
+                -- Fire Close remote first to reset the AFK station so it re-registers
+                pcall(function()
+                    local tycoon = getTycoon()
+                    tycoon:WaitForChild("Models", 9e9)
+                        :WaitForChild("AfkShooting", 9e9)
+                        :WaitForChild("ManualWorker", 9e9)
+                        :WaitForChild("ShootForMoney", 9e9)
+                        :WaitForChild("__comm__", 9e9)
+                        :WaitForChild("RE", 9e9)
+                        :WaitForChild("Close", 9e9)
+                        :FireServer()
+                end)
+                task.wait(0.5)
+
+                -- Now teleport onto the part
                 teleportTo(afkPart)
                 setStatus("AFK teleport to AutoEquipWeapon")
-                print("[AFK] Teleported to AutoEquipWeapon")
+                print("[AFK] Closed + teleported to AutoEquipWeapon")
             else
                 local rem = math.ceil(AFK_INTERVAL - (tick() - lastTeleport))
                 setStatus("AFK - next teleport in " .. rem .. "s")
