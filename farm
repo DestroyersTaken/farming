@@ -263,6 +263,7 @@ local frame = Instance.new("Frame", screenGui)
 frame.Size = UDim2.new(0,240,0,38); frame.Position = UDim2.new(0,12,0,12)  -- starts minimized
 frame.BackgroundColor3 = Color3.fromRGB(18,12,40)
 frame.BorderSizePixel = 0; frame.Active = true; frame.Draggable = true
+frame.ClipsDescendants = true
 Instance.new("UICorner",frame).CornerRadius = UDim.new(0,12)
 local stroke = Instance.new("UIStroke",frame)
 stroke.Color = Color3.fromRGB(90,60,180); stroke.Thickness = 1.5
