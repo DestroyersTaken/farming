@@ -672,17 +672,36 @@ task.spawn(function()
             if now - lastTeleport >= AFK_INTERVAL then
                 lastTeleport = now
 
-                -- Step 1: Move 10 studs away to fully exit proximity zone
                 local hrp = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
                 local afkCF = afkPart:IsA("BasePart") and afkPart.CFrame
                     or (afkPart:FindFirstChildWhichIsA("BasePart", true) and afkPart:FindFirstChildWhichIsA("BasePart", true).CFrame)
+
+                -- Step 1: Fire Close remote first (fixes game glitch)
+                pcall(function()
+                    local tycoon = getTycoon(); if not tycoon then return end
+                    local models = tycoon:FindFirstChild("Models"); if not models then return end
+                    local afk    = models:FindFirstChild("AfkShooting"); if not afk then return end
+                    local mw     = afk:FindFirstChild("ManualWorker"); if not mw then return end
+                    local sfm    = mw:FindFirstChild("ShootForMoney"); if not sfm then return end
+                    local comm   = sfm:FindFirstChild("__comm__"); if not comm then return end
+                    local re     = comm:FindFirstChild("RE"); if not re then return end
+                    local close  = re:FindFirstChild("Close"); if not close then return end
+                    close:FireServer()
+                    print("[AFK] Close remote fired")
+                end)
+
+                -- Step 2: Wait 10s for server to process
+                setStatus("AFK: waiting after close...")
+                task.wait(10)
+
+                -- Step 3: Move 10 studs away to fully exit proximity zone
                 if hrp and afkCF then
                     hrp.CFrame = afkCF + Vector3.new(10, 4, 0)
                     print("[AFK] Moved 10 studs away")
                 end
-                task.wait(1)
+                task.wait(0.5)
 
-                -- Step 2: PivotTo onto the part (moves full character, fires touch properly)
+                -- Step 4: PivotTo back onto the part (fires touch properly)
                 local character = localPlayer.Character
                 if character and afkCF then
                     character:PivotTo(afkCF + Vector3.new(0, 4, 0))
