@@ -672,11 +672,12 @@ task.spawn(function()
             if now - lastTeleport >= AFK_INTERVAL then
                 lastTeleport = now
 
-                local hrp = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+                local character = localPlayer.Character
+                local hrp = character and character:FindFirstChild("HumanoidRootPart")
                 local afkCF = afkPart:IsA("BasePart") and afkPart.CFrame
                     or (afkPart:FindFirstChildWhichIsA("BasePart", true) and afkPart:FindFirstChildWhichIsA("BasePart", true).CFrame)
 
-                -- Step 1: Fire Close remote first (fixes game glitch)
+                -- Step 1: Fire Close remote
                 pcall(function()
                     local tycoon = getTycoon(); if not tycoon then return end
                     local models = tycoon:FindFirstChild("Models"); if not models then return end
@@ -690,27 +691,26 @@ task.spawn(function()
                     print("[AFK] Close remote fired")
                 end)
 
-                -- Step 2: Wait 10s for server to process
+                -- Step 2: Wait 5s for server to process
                 setStatus("AFK: waiting after close...")
-                task.wait(10)
+                task.wait(5)
 
-                -- Step 3: Move 10 studs away to fully exit proximity zone
-                if hrp and afkCF then
-                    hrp.CFrame = afkCF + Vector3.new(10, 4, 0)
-                    print("[AFK] Moved 10 studs away")
-                end
+                -- Step 3: Move away → PivotTo (first entry)
+                if hrp and afkCF then hrp.CFrame = afkCF + Vector3.new(10, 4, 0) end
                 task.wait(0.5)
+                character = localPlayer.Character
+                if character and afkCF then character:PivotTo(afkCF + Vector3.new(0, 4, 0)) end
+                task.wait(1)
 
-                -- Step 4: PivotTo back onto the part (fires touch properly)
-                local character = localPlayer.Character
-                if character and afkCF then
-                    character:PivotTo(afkCF + Vector3.new(0, 4, 0))
-                    print("[AFK] PivotTo AutoEquipWeapon")
-                else
-                    teleportTo(afkPart)
-                end
+                -- Step 4: Move away → PivotTo again (second entry, ensures touch fires)
+                hrp = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp and afkCF then hrp.CFrame = afkCF + Vector3.new(10, 4, 0) end
+                task.wait(0.5)
+                character = localPlayer.Character
+                if character and afkCF then character:PivotTo(afkCF + Vector3.new(0, 4, 0)) end
+
                 setStatus("AFK teleport to AutoEquipWeapon")
-                print("[AFK] Teleported to AutoEquipWeapon")
+                print("[AFK] Double-entry done")
             else
                 local rem = math.ceil(AFK_INTERVAL - (tick() - lastTeleport))
                 setStatus("AFK - next teleport in " .. rem .. "s")
