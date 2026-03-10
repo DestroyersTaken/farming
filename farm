@@ -9,6 +9,16 @@ local localPlayer  = Players.LocalPlayer
 local username     = localPlayer.Name
 
 -- ──────────────────────────────────────────────────────────
+--  ANTI-AFK (silent, no GUI)
+-- ──────────────────────────────────────────────────────────
+local VirtualUser = game:GetService("VirtualUser")
+localPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+    print("[AntiAFK] Prevented AFK kick")
+end)
+
+-- ──────────────────────────────────────────────────────────
 --  SETTINGS
 -- ──────────────────────────────────────────────────────────
 local BUY_DELAY        = 0.5
