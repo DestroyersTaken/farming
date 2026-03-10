@@ -699,8 +699,16 @@ task.spawn(function()
                 -- Step 3: Wait for server to process the close
                 task.wait(4)
 
-                -- Step 4: Teleport onto the part
-                teleportTo(afkPart)
+                -- Step 4: Teleport onto the part using PivotTo (same as Dex) so touch fires properly
+                local character = localPlayer.Character
+                local afkCF2 = afkPart:IsA("BasePart") and afkPart.CFrame
+                    or (afkPart:FindFirstChildWhichIsA("BasePart", true) and afkPart:FindFirstChildWhichIsA("BasePart", true).CFrame)
+                if character and afkCF2 then
+                    character:PivotTo(afkCF2 + Vector3.new(0, 4, 0))
+                    print("[AFK] PivotTo AutoEquipWeapon")
+                else
+                    teleportTo(afkPart)  -- fallback
+                end
                 setStatus("AFK teleport to AutoEquipWeapon")
                 print("[AFK] Teleported to AutoEquipWeapon")
             else
