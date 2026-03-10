@@ -626,20 +626,18 @@ task.spawn(function()
                         setStatus("Buying priority buttons...")
                         for _, name in ipairs(PRIORITY) do
                             if not running or not autoFarm or campActive then break end
-                            -- Check for Manual mid-loop too
                             if folder:FindFirstChild(STOP_AT_BUTTON) then break end
-                            if SKIP_BUTTONS[name] then continue end  -- skip blocked buttons
+                            if SKIP_BUTTONS[name] then continue end
                             if folder:FindFirstChild(name) then
                                 smartBuy(remote, folder, name)
                             end
                         end
                     else
-                        -- No priority buttons — buy everything in folder (Manual check at top next pass)
                         setStatus("Buying all available buttons...")
                         for _, b in ipairs(folder:GetChildren()) do
                             if not running or not autoFarm or campActive then break end
-                            if b.Name == STOP_AT_BUTTON then break end  -- let loop top handle it
-                            if SKIP_BUTTONS[b.Name] then continue end   -- skip blocked buttons
+                            if b.Name == STOP_AT_BUTTON then break end
+                            if SKIP_BUTTONS[b.Name] then continue end
                             smartBuy(remote, folder, b.Name)
                         end
                     end
@@ -674,7 +672,17 @@ task.spawn(function()
             if now - lastTeleport >= AFK_INTERVAL then
                 lastTeleport = now
 
-                -- Fire Close remote to reset the AFK station (best-effort, never blocks teleport)
+                -- Step 1: Move 10 studs away to fully exit proximity zone
+                local hrp = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+                local afkCF = afkPart:IsA("BasePart") and afkPart.CFrame
+                    or (afkPart:FindFirstChildWhichIsA("BasePart", true) and afkPart:FindFirstChildWhichIsA("BasePart", true).CFrame)
+                if hrp and afkCF then
+                    hrp.CFrame = afkCF + Vector3.new(10, 4, 0)
+                    print("[AFK] Moved 10 studs away")
+                end
+                task.wait(0.5)
+
+                -- Step 2: Fire Close remote to reset the station
                 pcall(function()
                     local tycoon = getTycoon(); if not tycoon then return end
                     local models = tycoon:FindFirstChild("Models"); if not models then return end
@@ -687,9 +695,11 @@ task.spawn(function()
                     close:FireServer()
                     print("[AFK] Close remote fired")
                 end)
-                task.wait(4)  -- wait for server to process the Close reset
 
-                -- Teleport onto the part
+                -- Step 3: Wait for server to process the close
+                task.wait(4)
+
+                -- Step 4: Teleport onto the part
                 teleportTo(afkPart)
                 setStatus("AFK teleport to AutoEquipWeapon")
                 print("[AFK] Teleported to AutoEquipWeapon")
